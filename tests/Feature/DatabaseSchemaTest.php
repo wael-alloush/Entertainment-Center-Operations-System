@@ -1,7 +1,6 @@
 <?php
 
 use App\Enums\InvoiceStatus;
-use Illuminate\Support\Facades\Schema;
 use App\Models\AttendanceRecord;
 use App\Models\Customer;
 use App\Models\Employee;
@@ -9,7 +8,10 @@ use App\Models\Invoice;
 use App\Models\InvoiceExtension;
 use App\Models\SessionDuration;
 use App\Models\Setting;
+use Database\Seeders\DatabaseSeeder;
+use Database\Seeders\SessionDurationSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -24,7 +26,7 @@ it('creates all domain tables', function (): void {
 });
 
 it('seeds session durations from the dashboard design', function (): void {
-    $this->seed(\Database\Seeders\SessionDurationSeeder::class);
+    $this->seed(SessionDurationSeeder::class);
 
     expect(SessionDuration::query()->count())->toBe(4)
         ->and(SessionDuration::query()->where('name', 'مفتوح')->first()?->duration_minutes)->toBeNull();
@@ -46,7 +48,6 @@ it('stores invoices with extensions and searchable fields', function (): void {
     InvoiceExtension::query()->create([
         'invoice_id' => $invoice->id,
         'session_duration_id' => $extensionDuration->id,
-        'applied_at' => now(),
         'sort_order' => 1,
     ]);
 
@@ -77,7 +78,7 @@ it('tracks employee attendance per day', function (): void {
 });
 
 it('stores work schedule settings', function (): void {
-    $this->seed(\Database\Seeders\DatabaseSeeder::class);
+    $this->seed(DatabaseSeeder::class);
 
     expect(Setting::getValue('work_schedule'))->toBe(['start_time' => '08:22']);
 });

@@ -25,11 +25,6 @@ class DemoDataSeeder extends Seeder
 
         $customer = Customer::query()->updateOrCreate(
             ['phone_number' => '0599123456'],
-            [
-                'visit_count' => 5,
-                'first_visit_at' => now()->subMonths(2),
-                'last_visit_at' => now(),
-            ],
         );
 
         $enteredAt = now()->subMinutes(20);
@@ -49,20 +44,10 @@ class DemoDataSeeder extends Seeder
 
         $customerTwo = Customer::query()->updateOrCreate(
             ['phone_number' => '0599111222'],
-            [
-                'visit_count' => 2,
-                'first_visit_at' => now()->subMonth(),
-                'last_visit_at' => now()->subHours(2),
-            ],
         );
 
         $customerThree = Customer::query()->updateOrCreate(
             ['phone_number' => '0599333444'],
-            [
-                'visit_count' => 1,
-                'first_visit_at' => now()->subDays(2),
-                'last_visit_at' => now()->subDay(),
-            ],
         );
 
         Invoice::query()->updateOrCreate(

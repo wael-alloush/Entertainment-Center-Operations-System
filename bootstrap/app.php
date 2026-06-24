@@ -1,5 +1,9 @@
 <?php
 
+use App\Http\Middleware\AssignDeviceCookie;
+use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureTrustedDevice;
+use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -14,10 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
-            'admin' => \App\Http\Middleware\EnsureAdmin::class,
+            'admin' => EnsureAdmin::class,
+            'active' => EnsureUserIsActive::class,
+            'trusted' => EnsureTrustedDevice::class,
         ]);
 
         $middleware->web(append: [
+            AssignDeviceCookie::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);

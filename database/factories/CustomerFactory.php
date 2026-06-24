@@ -19,9 +19,6 @@ class CustomerFactory extends Factory
     {
         return [
             'phone_number' => '05'.fake()->unique()->numerify('########'),
-            'visit_count' => fake()->numberBetween(1, 20),
-            'first_visit_at' => fake()->dateTimeBetween('-1 year'),
-            'last_visit_at' => fake()->dateTimeBetween('-1 month'),
         ];
     }
 }

@@ -1,15 +1,17 @@
 <?php
 
 use App\Enums\InvoiceStatus;
-use App\Models\Employee;
+use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\SessionDuration;
 use App\Models\User;
+use App\Services\InvoiceService;
 use App\Support\TimeFormatter;
 use Carbon\Carbon;
 use Database\Seeders\SessionDurationSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     $this->seed(SessionDurationSeeder::class);
@@ -17,7 +19,7 @@ beforeEach(function (): void {
 });
 
 it('lists active invoices for authenticated users', function (): void {
-    Invoice::factory()->active()->create();
+    Invoice::factory()->active()->create(['invoice_number' => '100001']);
 
     $this->actingAs($this->user)
         ->get(route('invoices.active'))
@@ -25,7 +27,23 @@ it('lists active invoices for authenticated users', function (): void {
         ->assertInertia(fn ($page) => $page
             ->component('invoices/active')
             ->has('sessionDurations', 4)
-            ->has('invoices.data', 1));
+            ->has('invoices.data', 1)
+            ->where('nextInvoiceNumber', '100002'));
+});
+
+it('suggests the next invoice number from the latest regular invoice', function (): void {
+    Invoice::factory()->active()->create(['invoice_number' => '100010']);
+    Invoice::factory()->active()->create([
+        'invoice_number' => '100015',
+        'is_bonus' => true,
+        'bonus_display_number' => 1,
+    ]);
+
+    expect(app(InvoiceService::class)->suggestedNextInvoiceNumber())->toBe('100011');
+});
+
+it('suggests 1 when no regular numeric invoices exist', function (): void {
+    expect(app(InvoiceService::class)->suggestedNextInvoiceNumber())->toBe('1');
 });
 
 it('creates a new invoice', function (): void {
@@ -41,6 +59,24 @@ it('creates a new invoice', function (): void {
         ->assertRedirect(route('invoices.active'));
 
     expect(Invoice::query()->where('invoice_number', '999888')->exists())->toBeTrue();
+});
+
+it('returns updated next invoice number after creating an invoice', function (): void {
+    $duration = SessionDuration::query()->first();
+    Invoice::factory()->active()->create(['invoice_number' => '100001']);
+
+    $this->actingAs($this->user)
+        ->followingRedirects()
+        ->post(route('invoices.store'), [
+            'invoice_number' => '100002',
+            'phone_number' => '0598765432',
+            'children_count' => 1,
+            'session_duration_id' => $duration->id,
+        ])
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('invoices/active')
+            ->where('nextInvoiceNumber', '100003'));
 });
 
 it('records invoice entry time in saudi local timezone', function (): void {
@@ -84,7 +120,7 @@ it('counts customer visits by unique days not invoices', function (): void {
         ])
         ->assertRedirect();
 
-    $customer = \App\Models\Customer::query()->where('phone_number', '0598000001')->first();
+    $customer = Customer::query()->where('phone_number', '0598000001')->first();
 
     expect($customer)->not->toBeNull()
         ->and($customer->visit_count)->toBe(1);
@@ -99,23 +135,29 @@ it('counts customer visits by unique days not invoices', function (): void {
 
 it('shows visit badge as unique visit days for the phone number', function (): void {
     $phone = '0598000099';
+    $customer = Customer::factory()->create(['phone_number' => $phone]);
 
     Invoice::factory()->completed()->create([
+        'customer_id' => $customer->id,
         'phone_number' => $phone,
         'entered_at' => now()->subDays(2),
         'exited_at' => now()->subDays(2)->addHour(),
     ]);
 
     Invoice::factory()->completed()->create([
+        'customer_id' => $customer->id,
         'phone_number' => $phone,
         'entered_at' => now()->subDay(),
         'exited_at' => now()->subDay()->addHour(),
     ]);
 
     Invoice::factory()->active()->create([
+        'customer_id' => $customer->id,
         'phone_number' => $phone,
         'entered_at' => now(),
     ]);
+
+    app(InvoiceService::class)->refreshStoredVisitCount($phone);
 
     $this->actingAs($this->user)
         ->get(route('invoices.active'))
@@ -227,6 +269,42 @@ it('updates phone number and links customer', function (): void {
     expect($invoice->fresh()->phone_number)->toBe('0599222222');
 });
 
+it('refreshes visit counts for old and new phone numbers when phone is updated', function (): void {
+    $oldPhone = '0599111001';
+    $newPhone = '0599222002';
+    $oldCustomer = Customer::factory()->create(['phone_number' => $oldPhone, 'visit_count' => 2]);
+    $newCustomer = Customer::factory()->create(['phone_number' => $newPhone, 'visit_count' => 0]);
+
+    Invoice::factory()->completed()->create([
+        'customer_id' => $oldCustomer->id,
+        'phone_number' => $oldPhone,
+        'entered_at' => now()->subDays(3),
+        'exited_at' => now()->subDays(3)->addHour(),
+    ]);
+
+    $invoice = Invoice::factory()->active()->create([
+        'customer_id' => $oldCustomer->id,
+        'phone_number' => $oldPhone,
+        'entered_at' => now(),
+    ]);
+
+    app(InvoiceService::class)->refreshStoredVisitCount($oldPhone);
+
+    expect($oldCustomer->fresh()->visit_count)->toBe(2);
+
+    $this->actingAs($this->user)
+        ->patchJson(route('invoices.update', $invoice), [
+            'phone_number' => $newPhone,
+        ])
+        ->assertOk()
+        ->assertJsonPath('invoice.phone_number', $newPhone)
+        ->assertJsonPath('invoice.visit_count', 1);
+
+    expect($oldCustomer->fresh()->visit_count)->toBe(1)
+        ->and($newCustomer->fresh()->visit_count)->toBe(1)
+        ->and($invoice->fresh()->customer_id)->toBe($newCustomer->id);
+});
+
 it('updates children count via json', function (): void {
     $invoice = Invoice::factory()->active()->create(['children_count' => 1]);
 
@@ -275,12 +353,16 @@ it('allows reception user to update invoice fields', function (): void {
         ->assertJsonPath('invoice.children_count', 3);
 });
 
-it('reactivates a completed invoice without changing its times', function (): void {
+it('reactivates a completed invoice and recalculates expected exit from entered at', function (): void {
+    $this->travelTo(now()->setTime(10, 0));
+
+    $sessionDuration = SessionDuration::query()->firstOrFail();
     $enteredAt = now()->subDays(2)->setTime(10, 30);
     $expectedExit = now()->subDays(2)->setTime(12, 0);
     $exitedAt = now()->subDays(2)->setTime(11, 45);
 
     $invoice = Invoice::factory()->completed()->create([
+        'session_duration_id' => $sessionDuration->id,
         'entered_at' => $enteredAt,
         'expected_exit_at' => $expectedExit,
         'exited_at' => $exitedAt,
@@ -294,8 +376,40 @@ it('reactivates a completed invoice without changing its times', function (): vo
 
     expect($invoice->status)->toBe(InvoiceStatus::Active)
         ->and($invoice->entered_at->toDateTimeString())->toBe($enteredAt->toDateTimeString())
-        ->and($invoice->expected_exit_at->toDateTimeString())->toBe($expectedExit->toDateTimeString())
-        ->and($invoice->exited_at->toDateTimeString())->toBe($exitedAt->toDateTimeString());
+        ->and($invoice->exited_at)->toBeNull()
+        ->and($invoice->expected_exit_at?->toDateTimeString())
+        ->toBe($enteredAt->copy()->addMinutes($sessionDuration->duration_minutes)->toDateTimeString());
+});
+
+it('reactivates a completed invoice with extensions and includes extension durations', function (): void {
+    $this->travelTo(now()->setTime(10, 0));
+
+    $sessionDuration = SessionDuration::query()->where('duration_minutes', 65)->firstOrFail();
+    $extensionDuration = SessionDuration::query()->where('duration_minutes', 33)->firstOrFail();
+
+    $enteredAt = now()->subDay();
+
+    $invoice = Invoice::factory()->completed()->create([
+        'session_duration_id' => $sessionDuration->id,
+        'entered_at' => $enteredAt,
+        'expected_exit_at' => $enteredAt->copy()->addMinutes(98),
+        'exited_at' => $enteredAt->copy()->addMinutes(80),
+    ]);
+
+    $invoice->extensions()->create([
+        'session_duration_id' => $extensionDuration->id,
+        'sort_order' => 1,
+    ]);
+
+    $this->actingAs(User::factory()->admin()->create())
+        ->patch(route('invoices.reactivate', $invoice))
+        ->assertRedirect(route('invoices.active'));
+
+    $invoice->refresh();
+
+    expect($invoice->exited_at)->toBeNull()
+        ->and($invoice->expected_exit_at?->toDateTimeString())
+        ->toBe($enteredAt->copy()->addMinutes(98)->toDateTimeString());
 });
 
 it('forbids reactivating active invoices', function (): void {
@@ -324,98 +438,20 @@ it('searches invoices by phone number', function (): void {
         ->assertInertia(fn ($page) => $page->has('invoices.data', 1));
 });
 
-it('toggles parent call flag on active invoices for reception users', function (): void {
-    $invoice = Invoice::factory()->active()->create();
-
-    $this->actingAs($this->user)
-        ->from(route('invoices.active'))
-        ->patch(route('invoices.parent-call', $invoice))
-        ->assertRedirect(route('invoices.active'))
-        ->assertSessionHas('success');
-
-    expect($invoice->fresh())
-        ->needs_parent_call->toBeTrue()
-        ->parent_call_marked_by->toBe($this->user->id)
-        ->and($invoice->fresh()->parent_call_marked_at)->not->toBeNull();
-
-    $this->actingAs($this->user)
-        ->from(route('invoices.active'))
-        ->patch(route('invoices.parent-call', $invoice))
-        ->assertRedirect(route('invoices.active'));
-
-    expect($invoice->fresh())
-        ->needs_parent_call->toBeFalse()
-        ->parent_call_marked_at->toBeNull()
-        ->parent_call_marked_by->toBeNull();
-});
-
-it('shows parent call flag in active invoice list', function (): void {
-    $invoice = Invoice::factory()->active()->needsParentCall()->create([
-        'parent_call_marked_by' => $this->user->id,
-    ]);
-
-    $this->actingAs($this->user)
-        ->get(route('invoices.active'))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->component('invoices/active')
-            ->where('invoices.data.0.id', $invoice->id)
-            ->where('invoices.data.0.needs_parent_call', true)
-            ->where('invoices.data.0.parent_call_marked_by', $this->user->name));
-});
-
-it('keeps active invoice order by entry time regardless of parent call flag', function (): void {
-    $older = Invoice::factory()->active()->needsParentCall()->create([
-        'entered_at' => now()->subHour(),
-        'parent_call_marked_by' => $this->user->id,
-    ]);
-    $newer = Invoice::factory()->active()->create(['entered_at' => now()]);
-
-    $this->actingAs($this->user)
-        ->get(route('invoices.active'))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->where('invoices.data.0.id', $newer->id)
-            ->where('invoices.data.1.id', $older->id));
-});
-
-it('clears parent call flag when invoice is checked out', function (): void {
-    $invoice = Invoice::factory()->active()->needsParentCall()->create([
-        'parent_call_marked_by' => $this->user->id,
-    ]);
-
-    $this->actingAs($this->user)
-        ->patch(route('invoices.checkout', $invoice))
-        ->assertRedirect();
-
-    expect($invoice->fresh())
-        ->needs_parent_call->toBeFalse()
-        ->parent_call_marked_at->toBeNull()
-        ->parent_call_marked_by->toBeNull();
-});
-
-it('forbids toggling parent call on completed invoices', function (): void {
-    $invoice = Invoice::factory()->completed()->create();
-
-    $this->actingAs($this->user)
-        ->patch(route('invoices.parent-call', $invoice))
-        ->assertForbidden();
-});
-
 it('returns only changed active invoices for lightweight sync', function (): void {
     $invoice = Invoice::factory()->active()->create();
     $since = now()->subMinute()->toIso8601String();
 
     $this->travel(2)->seconds();
 
-    $invoice->update(['needs_parent_call' => true]);
+    $invoice->update(['children_count' => 4]);
 
     $this->actingAs($this->user)
         ->getJson(route('invoices.active.changes', ['since' => $since]))
         ->assertSuccessful()
         ->assertJsonCount(1, 'updated')
         ->assertJsonPath('updated.0.id', $invoice->id)
-        ->assertJsonPath('updated.0.needs_parent_call', true)
+        ->assertJsonPath('updated.0.children_count', 4)
         ->assertJsonPath('removed_ids', []);
 });
 

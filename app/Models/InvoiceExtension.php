@@ -13,7 +13,6 @@ class InvoiceExtension extends Model
     protected $fillable = [
         'invoice_id',
         'session_duration_id',
-        'applied_at',
         'sort_order',
     ];
 
@@ -23,7 +22,6 @@ class InvoiceExtension extends Model
     protected function casts(): array
     {
         return [
-            'applied_at' => 'datetime',
             'sort_order' => 'integer',
         ];
     }

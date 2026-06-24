@@ -8,14 +8,13 @@ import { Users } from 'lucide-react';
 
 interface EmployeesPageProps {
     employees: EmployeeAttendance[];
+    canRecordAttendance: boolean;
+    attendanceDeviceRestrictionEnabled: boolean;
 }
 
-const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'لوحة التحكم', href: '/dashboard' },
-    { title: 'الموظفين', href: '/employees' },
-];
+const breadcrumbs: BreadcrumbItem[] = [{ title: 'الموظفين', href: '/employees' }];
 
-export default function EmployeesPage({ employees }: EmployeesPageProps) {
+export default function EmployeesPage({ employees, canRecordAttendance, attendanceDeviceRestrictionEnabled }: EmployeesPageProps) {
     const { flash } = usePage<{ flash: { success?: string; error?: string } }>().props;
 
     return (
@@ -24,17 +23,20 @@ export default function EmployeesPage({ employees }: EmployeesPageProps) {
             <FlashAlert message={flash?.error} variant="error" />
             <FlashAlert message={flash?.success} />
             <div className="space-y-2">
-                <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
+                <h1 className="raad-page-title flex items-center gap-2">
                     <span className="raad-icon-chip bg-sky-500/12 text-sky-600 dark:text-sky-400">
                         <Users className="size-5" strokeWidth={2.25} />
                     </span>
                     حضور الموظفين
                 </h1>
                 <p className="text-muted-foreground text-sm">تسجيل حضور وانصراف فريق العمل اليوم</p>
+                {attendanceDeviceRestrictionEnabled && !canRecordAttendance && (
+                    <p className="text-destructive text-sm">هذا الجهاز غير معتمد لتسجيل الحضور. استخدم جهاز الحضور المعتمد.</p>
+                )}
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {employees.map((employee) => (
-                    <EmployeeCard key={employee.id} employee={employee} />
+                    <EmployeeCard key={employee.id} employee={employee} canRecordAttendance={canRecordAttendance} />
                 ))}
             </div>
         </AppLayout>

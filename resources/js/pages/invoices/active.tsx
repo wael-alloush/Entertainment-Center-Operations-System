@@ -10,14 +10,12 @@ interface ActiveInvoicesProps {
     sessionDurations: SessionDuration[];
     summary: InvoiceSummary;
     filters: InvoiceFilters;
+    nextInvoiceNumber: string;
 }
 
-const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'لوحة التحكم', href: '/dashboard' },
-    { title: 'الفواتير النشطة', href: '/invoices/active' },
-];
+const breadcrumbs: BreadcrumbItem[] = [{ title: 'الفواتير النشطة', href: '/invoices/active' }];
 
-export default function ActiveInvoices({ invoices, sessionDurations, summary, filters }: ActiveInvoicesProps) {
+export default function ActiveInvoices({ invoices, sessionDurations, summary, filters, nextInvoiceNumber }: ActiveInvoicesProps) {
     const { flash } = usePage<{ flash: { success?: string } }>().props;
 
     return (
@@ -29,6 +27,7 @@ export default function ActiveInvoices({ invoices, sessionDurations, summary, fi
                 sessionDurations={sessionDurations}
                 summary={summary}
                 filters={filters}
+                nextInvoiceNumber={nextInvoiceNumber}
                 variant="active"
                 routeName="invoices.active"
             />

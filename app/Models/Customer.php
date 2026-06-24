@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use Database\Factories\CustomerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Customer extends Model
 {
-    /** @use HasFactory<\Database\Factories\CustomerFactory> */
+    /** @use HasFactory<CustomerFactory> */
     use HasFactory;
 
     /**
@@ -17,8 +18,6 @@ class Customer extends Model
     protected $fillable = [
         'phone_number',
         'visit_count',
-        'first_visit_at',
-        'last_visit_at',
     ];
 
     /**
@@ -28,8 +27,6 @@ class Customer extends Model
     {
         return [
             'visit_count' => 'integer',
-            'first_visit_at' => 'datetime',
-            'last_visit_at' => 'datetime',
         ];
     }
 

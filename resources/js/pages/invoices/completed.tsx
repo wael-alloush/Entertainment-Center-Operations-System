@@ -10,14 +10,18 @@ interface CompletedInvoicesProps {
     sessionDurations: SessionDuration[];
     summary: InvoiceSummary;
     filters: InvoiceFilters;
+    canFilterCompletedByDate: boolean;
 }
 
-const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'لوحة التحكم', href: '/dashboard' },
-    { title: 'الفواتير السابقة', href: '/invoices/completed' },
-];
+const breadcrumbs: BreadcrumbItem[] = [{ title: 'الفواتير السابقة', href: '/invoices/completed' }];
 
-export default function CompletedInvoices({ invoices, sessionDurations, summary, filters }: CompletedInvoicesProps) {
+export default function CompletedInvoices({
+    invoices,
+    sessionDurations,
+    summary,
+    filters,
+    canFilterCompletedByDate,
+}: CompletedInvoicesProps) {
     const { flash } = usePage<{ flash: { success?: string } }>().props;
 
     return (
@@ -31,6 +35,7 @@ export default function CompletedInvoices({ invoices, sessionDurations, summary,
                 filters={filters}
                 variant="completed"
                 routeName="invoices.completed"
+                canFilterCompletedByDate={canFilterCompletedByDate}
             />
         </AppLayout>
     );

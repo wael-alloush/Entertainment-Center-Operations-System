@@ -1,3 +1,5 @@
+import { useConfirm } from '@/components/raad/confirm-dialog';
+import { PreviousVisitsPanel } from '@/components/raad/previous-visits-panel';
 import { SessionCard } from '@/components/raad/session-card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -6,9 +8,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatRemainingMinutes } from '@/lib/format-time';
+import { useLiveRemainingMinute } from '@/hooks/use-live-remaining-minutes';
+import { formatRemainingMinutes, remainingTimeBadgeClass, remainingTimeTextClass } from '@/lib/format-time';
+import { flushPrefetchedListPages } from '@/lib/inertia-list-pages';
+import { whatsappUrl } from '@/lib/whatsapp';
 import { cn } from '@/lib/utils';
-import { InvoiceDetail, PreviousVisitsPayload, SessionDuration } from '@/types/domain';
+import { InvoiceDetail, PreviousVisitInvoice, PreviousVisitsPayload, SessionDuration } from '@/types/domain';
 import { router } from '@inertiajs/react';
 import {
     ArrowRight,
@@ -25,7 +30,9 @@ import {
     RotateCcw,
     Star,
     Timer,
+    Trash2,
     Users,
+    Wallet,
     X,
     type LucideIcon,
 } from 'lucide-react';
@@ -40,11 +47,13 @@ interface ValidationError extends Error {
 
 interface InvoiceDetailDialogProps {
     invoiceId: number | null;
+    expiredBonusId?: number | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
     isAdmin?: boolean;
     showReceptionActions?: boolean;
     showReactivate?: boolean;
+    showDeleteCompleted?: boolean;
     sessionDurations?: SessionDuration[];
 }
 
@@ -85,7 +94,10 @@ function splitDateTime(value: string | null | undefined): { date: string; time: 
 }
 
 function splitEndDateTime(invoice: InvoiceDetail | null): { date: string; time: string } {
-    const value = invoice?.expected_exit_at_full ?? invoice?.exited_at_full;
+    const value =
+        invoice?.status === 'completed' && invoice.exited_at_full
+            ? invoice.exited_at_full
+            : (invoice?.expected_exit_at_full ?? invoice?.exited_at_full);
 
     if (value) {
         return splitDateTime(value);
@@ -99,12 +111,6 @@ function splitEndDateTime(invoice: InvoiceDetail | null): { date: string; time: 
 }
 
 function sessionDurationLabel(invoice: InvoiceDetail): string {
-    const minutes = invoice.session_duration.duration_minutes;
-
-    if (minutes !== null) {
-        return `${minutes} دقيقة`;
-    }
-
     return invoice.session_duration.name;
 }
 
@@ -120,7 +126,7 @@ function InfoCard({
     className?: string;
 }) {
     return (
-        <div className={cn('space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3', className)}>
+        <div className={cn('space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-2.5 md:space-y-2 md:p-3', className)}>
             <div className="flex items-center gap-1.5">
                 {Icon && <Icon className="text-muted-foreground size-3.5" strokeWidth={2.25} />}
                 <p className="text-muted-foreground text-xs font-medium">{label}</p>
@@ -132,27 +138,19 @@ function InfoCard({
 
 function DetailLoadingSkeleton() {
     return (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2 md:gap-3">
             {Array.from({ length: 6 }).map((_, index) => (
-                <Skeleton key={index} className="h-24 w-full rounded-lg" />
+                <Skeleton key={index} className="h-20 w-full rounded-lg md:h-24" />
             ))}
         </div>
     );
-}
-
-function remainingTimeTone(remainingMinutes: number): string {
-    if (remainingMinutes <= 10) {
-        return 'text-destructive';
-    }
-
-    return 'text-muted-foreground';
 }
 
 function SessionBadge({ name, color }: { name: string; color: string }) {
     return (
         <Badge
             variant="outline"
-            className="border-0 font-medium text-white shadow-sm"
+            className="border-0 px-1.5 py-0 text-xs font-medium text-white shadow-sm"
             style={{ backgroundColor: color, boxShadow: `${color}33 0 2px 8px` }}
         >
             {name}
@@ -236,182 +234,17 @@ function EditableInvoiceField({
     );
 }
 
-function PhoneAdminActions({ onVisits, onBonus }: { onVisits: () => void; onBonus: () => void }) {
-    return (
-        <div className="flex items-center gap-2">
-            <button
-                type="button"
-                title="إضافة مكافأة"
-                onClick={onBonus}
-                className="flex size-9 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:text-emerald-400"
-            >
-                <Gift className="size-4" />
-            </button>
-            <button
-                type="button"
-                title="الزيارات السابقة"
-                onClick={onVisits}
-                className="flex size-9 items-center justify-center rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-600 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
-            >
-                <Star className="size-4 fill-amber-400 text-amber-500" />
-            </button>
-        </div>
-    );
-}
-
-function VisitValueBadge({ value }: { value: string | number }) {
-    return (
-        <span className="bg-muted text-foreground inline-flex min-w-10 items-center justify-center rounded-md px-2.5 py-1 text-sm font-medium">
-            {value}
-        </span>
-    );
-}
-
-function whatsappUrl(phoneNumber: string): string {
-    const normalized = phoneNumber.replace(/\D/g, '').replace(/^0/, '');
-
-    return `https://wa.me/966${normalized}`;
-}
-
-function PreviousVisitsPanel({
-    payload,
-    loading,
-    currentInvoiceId,
-}: {
-    payload: PreviousVisitsPayload | null;
-    loading: boolean;
-    currentInvoiceId?: number | null;
-}) {
-    if (loading) {
-        return (
-            <div className="flex justify-center py-12">
-                <LoaderCircle className="text-primary size-8 animate-spin" />
-            </div>
-        );
-    }
-
-    if (!payload || payload.invoices.length === 0) {
-        return (
-            <div className="text-muted-foreground flex flex-col items-center gap-2 py-12 text-center text-sm">
-                <History className="text-muted-foreground/60 size-8" />
-                لا توجد فواتير سابقة
-            </div>
-        );
-    }
-
-    return (
-        <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-                <div className="flex items-center gap-2" dir="ltr">
-                    <Phone className="text-muted-foreground size-4" />
-                    <span className="font-mono text-lg font-semibold tracking-wide">{payload.phone_number}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                    <a
-                        href={whatsappUrl(payload.phone_number)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-muted-foreground hover:text-foreground p-2"
-                        title="واتساب"
-                    >
-                        <MessageCircle className="size-4" />
-                    </a>
-                    <a
-                        href={`tel:${payload.phone_number}`}
-                        className="text-muted-foreground hover:text-foreground p-2"
-                        title="اتصال"
-                    >
-                        <Phone className="size-4" />
-                    </a>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-                    <CalendarDays className="text-muted-foreground size-4" />
-                    <div>
-                        <p className="text-muted-foreground text-xs">أيام الزيارة</p>
-                        <p className="text-lg font-semibold">{payload.visit_count}</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-                    <Users className="text-muted-foreground size-4" />
-                    <div>
-                        <p className="text-muted-foreground text-xs">متوسط الأطفال / زيارة</p>
-                        <p className="text-lg font-semibold">{payload.average_children}</p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-xl border border-border/70 shadow-sm">
-                <table className="w-full min-w-[680px] text-sm">
-                    <thead>
-                        <tr className="raad-table-head">
-                            <th className="px-3 py-3 text-right font-medium">رقم الفاتورة</th>
-                            <th className="px-3 py-3 text-right font-medium">عدد الأطفال</th>
-                            <th className="px-3 py-3 text-right font-medium">مدة الجلسة الأصلية</th>
-                            <th className="px-3 py-3 text-right font-medium">مدة التمديدات</th>
-                            <th className="px-3 py-3 text-right font-medium">إجمالي الوقت</th>
-                            <th className="px-3 py-3 text-right font-medium">وقت البداية</th>
-                            <th className="px-3 py-3 text-right font-medium">التاريخ</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {payload.invoices.map((visit) => (
-                            <tr
-                                key={visit.id}
-                                className={cn(
-                                    'border-b transition-colors last:border-0',
-                                    visit.id === currentInvoiceId
-                                        ? 'bg-primary/8 ring-1 ring-inset ring-primary/20'
-                                        : 'hover:bg-muted/30',
-                                )}
-                            >
-                                <td className="px-3 py-3 text-center">
-                                    <VisitValueBadge value={visit.invoice_number} />
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                    <VisitValueBadge value={visit.children_count} />
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                    <VisitValueBadge value={visit.original_duration_minutes} />
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                    <VisitValueBadge value={visit.extensions_duration_minutes} />
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                    <VisitValueBadge value={visit.total_duration_minutes} />
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                    <span className="bg-muted inline-block min-w-20 rounded-lg px-3 py-1.5 font-medium" dir="ltr">
-                                        {visit.started_at ?? '—'}
-                                    </span>
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                    <span className="bg-muted inline-block min-w-28 rounded-lg px-3 py-1.5 font-medium" dir="ltr">
-                                        {visit.visit_date ?? '—'}
-                                    </span>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-}
-
 function DateTimeCard({ label, dateTime }: { label: string; dateTime: { date: string; time: string } }) {
     return (
         <InfoCard label={label}>
-            <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-background px-3 py-2.5" dir="ltr">
-                    <span className="font-semibold">{dateTime.date}</span>
-                    <CalendarDays className="text-primary size-4 shrink-0" />
+            <div className="space-y-1.5 md:space-y-2">
+                <div className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-background px-2.5 py-2 md:px-3 md:py-2.5" dir="ltr">
+                    <span className="text-sm font-semibold md:text-base">{dateTime.date}</span>
+                    <CalendarDays className="text-primary size-3.5 shrink-0 md:size-4" />
                 </div>
-                <div className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-background px-3 py-2.5" dir="ltr">
-                    <span className="font-semibold">{dateTime.time}</span>
-                    <Clock className="size-4 shrink-0 text-orange-500" />
+                <div className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-background px-2.5 py-2 md:px-3 md:py-2.5" dir="ltr">
+                    <span className="text-sm font-semibold md:text-base">{dateTime.time}</span>
+                    <Clock className="size-3.5 shrink-0 text-orange-500 md:size-4" />
                 </div>
             </div>
         </InfoCard>
@@ -420,28 +253,41 @@ function DateTimeCard({ label, dateTime }: { label: string; dateTime: { date: st
 
 export function InvoiceDetailDialog({
     invoiceId,
+    expiredBonusId = null,
     open,
     onOpenChange,
     isAdmin = false,
     showReceptionActions = false,
     showReactivate = false,
+    showDeleteCompleted = false,
     sessionDurations = [],
 }: InvoiceDetailDialogProps) {
+    const confirm = useConfirm();
     const [view, setView] = useState<DialogView>('detail');
     const [loading, setLoading] = useState(false);
     const [invoice, setInvoice] = useState<InvoiceDetail | null>(null);
     const [visitsPayload, setVisitsPayload] = useState<PreviousVisitsPayload | null>(null);
     const [visitsLoading, setVisitsLoading] = useState(false);
-    const [bonusTitle, setBonusTitle] = useState('');
-    const [bonusNotes, setBonusNotes] = useState('');
+    const [visitsPageLoading, setVisitsPageLoading] = useState(false);
+    const [bonusChildrenCount, setBonusChildrenCount] = useState<number | ''>('');
+    const [bonusSessionDurationId, setBonusSessionDurationId] = useState<number | null>(null);
     const [bonusSubmitting, setBonusSubmitting] = useState(false);
+    const [bonusError, setBonusError] = useState<string | null>(null);
     const [extendDurationId, setExtendDurationId] = useState<number | null>(null);
+    const [extendSubmitting, setExtendSubmitting] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [editingField, setEditingField] = useState<EditableFieldKey | null>(null);
     const [editValue, setEditValue] = useState('');
     const [fieldError, setFieldError] = useState<string | null>(null);
     const [fieldSaving, setFieldSaving] = useState(false);
+    const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
+    const [activeExpiredBonusId, setActiveExpiredBonusId] = useState<number | null>(null);
+
+    const displayInvoice = useLiveRemainingMinute(
+        invoice,
+        open && invoice !== null && invoice.status === 'active' && !invoice.is_expired_bonus,
+    );
 
     const loadInvoice = useCallback(async (id: number) => {
         setLoading(true);
@@ -454,77 +300,223 @@ export function InvoiceDetailDialog({
         }
     }, []);
 
+    const loadExpiredBonus = useCallback(async (id: number) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await jsonFetch<{ invoice: InvoiceDetail }>(route('customer-bonuses.show', id));
+            setInvoice(data.invoice);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
-        if (open && invoiceId) {
-            setView('detail');
-            setMessage(null);
-            setError(null);
-            setBonusTitle('');
-            setBonusNotes('');
-            setExtendDurationId(null);
-            setEditingField(null);
-            setFieldError(null);
-            loadInvoice(invoiceId);
-        } else {
+        if (!open) {
             setInvoice(null);
             setVisitsPayload(null);
-        }
-    }, [open, invoiceId, loadInvoice]);
+            setActiveInvoiceId(null);
+            setActiveExpiredBonusId(null);
 
-    const loadVisits = async () => {
-        if (!invoiceId) {
             return;
         }
-        setVisitsLoading(true);
+
+        setView('detail');
+        setMessage(null);
         setError(null);
-        setView('visits');
-        try {
-            const data = await jsonFetch<PreviousVisitsPayload>(route('invoices.visits', invoiceId));
-            setVisitsPayload(data);
-        } catch {
-            setError('لا تملك صلاحية عرض الزيارات السابقة.');
-            setView('detail');
-        } finally {
-            setVisitsLoading(false);
+        setBonusChildrenCount('');
+        setBonusSessionDurationId(null);
+        setBonusError(null);
+        setExtendDurationId(null);
+        setExtendSubmitting(false);
+        setEditingField(null);
+        setFieldError(null);
+        setActiveInvoiceId(invoiceId);
+        setActiveExpiredBonusId(expiredBonusId ?? null);
+    }, [open, invoiceId, expiredBonusId]);
+
+    useEffect(() => {
+        if (!open) {
+            return;
         }
-    };
+
+        if (activeExpiredBonusId) {
+            loadExpiredBonus(activeExpiredBonusId);
+        } else if (activeInvoiceId) {
+            loadInvoice(activeInvoiceId);
+        }
+    }, [open, activeInvoiceId, activeExpiredBonusId, loadInvoice, loadExpiredBonus]);
+
+    const handleVisitClick = useCallback((visit: PreviousVisitInvoice) => {
+        if (visit.is_expired_bonus) {
+            setActiveInvoiceId(null);
+            setActiveExpiredBonusId(visit.id);
+        } else {
+            setActiveExpiredBonusId(null);
+            setActiveInvoiceId(visit.id);
+        }
+
+        setView('detail');
+    }, []);
+
+    const loadVisitsPage = useCallback(
+        async (page: number, initialLoad: boolean) => {
+            if (!activeInvoiceId && !activeExpiredBonusId) {
+                return;
+            }
+
+            if (initialLoad) {
+                setVisitsLoading(true);
+                setVisitsPayload(null);
+                setView('visits');
+            } else {
+                setVisitsPageLoading(true);
+            }
+
+            setError(null);
+
+            try {
+                const baseUrl = activeExpiredBonusId
+                    ? route('customer-bonuses.visits', activeExpiredBonusId)
+                    : route('invoices.visits', activeInvoiceId!);
+                const url = new URL(baseUrl, window.location.origin);
+                url.searchParams.set('page', String(page));
+
+                const data = await jsonFetch<PreviousVisitsPayload>(url.toString());
+                setVisitsPayload(data);
+            } catch {
+                if (initialLoad) {
+                    setError('لا تملك صلاحية عرض الزيارات السابقة.');
+                    setView('detail');
+                }
+            } finally {
+                setVisitsLoading(false);
+                setVisitsPageLoading(false);
+            }
+        },
+        [activeExpiredBonusId, activeInvoiceId],
+    );
+
+    const loadVisits = () => void loadVisitsPage(1, true);
 
     const submitBonus = async (event: FormEvent) => {
         event.preventDefault();
-        if (!invoiceId) {
+        if (!activeInvoiceId || !bonusSessionDurationId || bonusChildrenCount === '') {
             return;
         }
         setBonusSubmitting(true);
-        setError(null);
+        setBonusError(null);
         try {
-            const data = await jsonFetch<{ message: string; invoice: InvoiceDetail }>(route('invoices.bonuses.store', invoiceId), {
+            const data = await jsonFetch<{ message: string; invoice: InvoiceDetail }>(route('invoices.bonuses.store', activeInvoiceId), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
-                body: JSON.stringify({ title: bonusTitle, notes: bonusNotes || null }),
+                body: JSON.stringify({
+                    children_count: bonusChildrenCount,
+                    session_duration_id: bonusSessionDurationId,
+                }),
             });
             setInvoice(data.invoice);
             setMessage(data.message);
             setView('detail');
-        } catch {
-            setError('لا تملك صلاحية إضافة مكافأة.');
-            setView('detail');
+            flushPrefetchedListPages();
+            router.reload({ only: ['invoices', 'summary', 'pendingBonusCount'], preserveScroll: true });
+        } catch (err) {
+            const validationError = err as ValidationError;
+            const messages = Object.values(validationError.errors ?? {}).flat();
+            setBonusError(messages[0] ?? 'تعذر إضافة المكافأة.');
         } finally {
             setBonusSubmitting(false);
         }
     };
 
-    const checkout = () => {
-        if (!invoiceId) {
+    const openBonusForm = () => {
+        if (!invoice) {
             return;
         }
-        router.patch(route('invoices.checkout', invoiceId), {}, { onSuccess: () => onOpenChange(false) });
+        setBonusChildrenCount('');
+        setBonusSessionDurationId(null);
+        setBonusError(null);
+        setView('bonus');
+    };
+
+    const checkout = async () => {
+        if (!activeInvoiceId) {
+            return;
+        }
+
+        const label = invoice?.invoice_display_label || invoice?.invoice_number || 'هذه الفاتورة';
+
+        const confirmed = await confirm({
+            title: 'تسجيل الخروج',
+            description: `تسجيل خروج «${label}» وإنهاء الجلسة؟`,
+            confirmLabel: 'تسجيل الخروج',
+            variant: 'destructive',
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        router.patch(route('invoices.checkout', activeInvoiceId), {}, {
+            preserveScroll: true,
+            reset: ['invoices', 'summary'],
+            onSuccess: () => {
+                flushPrefetchedListPages();
+                onOpenChange(false);
+            },
+        });
     };
 
     const reactivate = () => {
-        if (!invoiceId) {
+        if (!activeInvoiceId) {
             return;
         }
-        router.patch(route('invoices.reactivate', invoiceId), {}, { onSuccess: () => onOpenChange(false) });
+        router.patch(route('invoices.reactivate', activeInvoiceId), {}, {
+            preserveScroll: true,
+            reset: ['invoices', 'summary'],
+            onSuccess: () => {
+                flushPrefetchedListPages();
+                onOpenChange(false);
+            },
+        });
+    };
+
+    const deleteFromRecord = async () => {
+        if (!invoice) {
+            return;
+        }
+
+        const label = invoice.invoice_display_label || invoice.invoice_number;
+
+        const confirmed = await confirm({
+            title: 'حذف من السجل',
+            description: `حذف «${label}» من الفواتير السابقة؟ لا يمكن التراجع.`,
+            confirmLabel: 'حذف',
+            variant: 'destructive',
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        const deleteOptions = {
+            preserveScroll: true,
+            reset: ['invoices'] as const,
+            onSuccess: () => {
+                flushPrefetchedListPages();
+                onOpenChange(false);
+            },
+        };
+
+        if (invoice.is_expired_bonus && activeExpiredBonusId) {
+            router.delete(route('customer-bonuses.completed-record.destroy', activeExpiredBonusId), deleteOptions);
+
+            return;
+        }
+
+        if (activeInvoiceId) {
+            router.delete(route('invoices.completed-record.destroy', activeInvoiceId), deleteOptions);
+        }
     };
 
     const startEdit = (field: EditableFieldKey) => {
@@ -554,7 +546,7 @@ export function InvoiceDetailDialog({
     };
 
     const saveField = async () => {
-        if (!invoiceId || !editingField) {
+        if (!activeInvoiceId || !editingField) {
             return;
         }
 
@@ -567,7 +559,7 @@ export function InvoiceDetailDialog({
                 : { [editingField]: editValue };
 
         try {
-            const data = await jsonFetch<{ message: string; invoice: InvoiceDetail }>(route('invoices.update', invoiceId), {
+            const data = await jsonFetch<{ message: string; invoice: InvoiceDetail }>(route('invoices.update', activeInvoiceId), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
                 body: JSON.stringify(payload),
@@ -576,6 +568,7 @@ export function InvoiceDetailDialog({
             setMessage(data.message);
             setEditingField(null);
             setEditValue('');
+            flushPrefetchedListPages();
             router.reload({ only: ['invoices', 'summary'], preserveScroll: true });
         } catch (err) {
             const validationError = err as ValidationError;
@@ -587,108 +580,235 @@ export function InvoiceDetailDialog({
     };
 
     const extend = () => {
-        if (!invoiceId || !extendDurationId) {
+        if (!activeInvoiceId || !extendDurationId || extendSubmitting) {
             return;
         }
-        router.post(route('invoices.extend', invoiceId), { session_duration_id: extendDurationId }, {
+
+        setExtendSubmitting(true);
+        router.post(route('invoices.extend', activeInvoiceId), { session_duration_id: extendDurationId }, {
             preserveScroll: true,
             reset: ['invoices'],
             onSuccess: () => {
-                loadInvoice(invoiceId);
+                flushPrefetchedListPages();
+                loadInvoice(activeInvoiceId);
                 setView('detail');
             },
+            onFinish: () => setExtendSubmitting(false),
         });
     };
 
     const viewMeta: Record<DialogView, { title: string; icon: LucideIcon }> = {
-        detail: { title: 'تفاصيل الفاتورة', icon: Receipt },
-        visits: { title: 'الزيارات السابقة', icon: Star },
+        detail: { title: invoice?.is_expired_bonus ? 'تفاصيل المكافأة' : 'تفاصيل الفاتورة', icon: Receipt },
+        visits: { title: 'الزيارات السابقة', icon: History },
         bonus: { title: 'إضافة مكافأة', icon: Gift },
         extend: { title: 'تمديد الجلسة', icon: Timer },
     };
 
     const startDateTime = splitDateTime(invoice?.entered_at_full);
     const endDateTime = splitEndDateTime(invoice);
-    const canExtend = invoice?.status === 'active' && invoice.expected_exit_at_full !== null;
+    const canExtend = !invoice?.is_expired_bonus && invoice?.status === 'active' && invoice.expected_exit_at_full !== null;
+    const canAddBonus =
+        isAdmin &&
+        invoice !== null &&
+        !invoice.is_expired_bonus &&
+        !invoice.is_credit &&
+        !invoice.has_pending_bonus &&
+        (invoice.status === 'active' || invoice.status === 'completed');
+    const canShowReceptionActions =
+        showReceptionActions && !invoice?.is_expired_bonus && invoice?.status === 'active';
+    const canShowReactivate = showReactivate && !invoice?.is_expired_bonus && invoice?.status === 'completed';
+    const canShowDeleteCompleted = showDeleteCompleted && invoice !== null;
     const currentView = viewMeta[view];
     const ViewIcon = currentView.icon;
+    const showDetailFooter =
+        view === 'detail' &&
+        !loading &&
+        invoice !== null &&
+        (canShowReceptionActions || canShowReactivate || canShowDeleteCompleted);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-h-[90vh] max-w-2xl gap-0 overflow-y-auto p-0 [&>button.absolute]:hidden">
-                <DialogHeader className="border-b px-4 py-3 text-right">
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="flex min-w-0 flex-1 items-center gap-2">
+            <DialogContent
+                className={cn(
+                    'flex max-h-[min(calc(100dvh-2rem),90vh)] flex-col gap-0 overflow-hidden p-0 [&>button.absolute]:hidden',
+                    view === 'visits' ? 'md:w-[50vw] md:max-w-[50vw]' : 'raad-dialog-surface-lg',
+                )}
+            >
+                <DialogHeader className="shrink-0 border-b px-4 py-2.5 text-right md:py-3">
+                    <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 md:gap-2">
                             {view !== 'detail' && (
                                 <Button type="button" variant="ghost" size="icon" onClick={() => setView('detail')}>
                                     <ArrowRight className="size-4" />
                                 </Button>
                             )}
-                            <DialogTitle className="flex items-center gap-2 text-base">
-                                <ViewIcon className="text-primary size-4" />
+                            <DialogTitle className="flex items-center gap-1.5 text-sm md:gap-2 md:text-base">
+                                <ViewIcon className="text-primary size-4 shrink-0" />
                                 {currentView.title}
                             </DialogTitle>
                             {view === 'detail' && invoice && (
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="secondary" className="shrink-0 text-xs">
                                     {invoice.status_label}
                                 </Badge>
                             )}
+                            {view === 'detail' && displayInvoice?.status === 'active' && !displayInvoice.is_expired_bonus && (
+                                <Badge
+                                    variant="outline"
+                                    className={cn(
+                                        'shrink-0 border-0 text-xs md:hidden',
+                                        remainingTimeBadgeClass(displayInvoice.remaining_minutes),
+                                    )}
+                                >
+                                    <Timer className="size-3" />
+                                    {formatRemainingMinutes(displayInvoice.remaining_minutes)}
+                                </Badge>
+                            )}
                         </div>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground shrink-0"
-                            onClick={() => onOpenChange(false)}
-                        >
-                            <X className="size-4" />
-                        </Button>
+                        <div className="flex shrink-0 items-center gap-0.5 md:gap-1">
+                            {isAdmin && view === 'detail' && invoice && (
+                                <>
+                                    {canAddBonus && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            title="إضافة مكافأة"
+                                            className="text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-400"
+                                            onClick={openBonusForm}
+                                        >
+                                            <Gift className="size-4" />
+                                        </Button>
+                                    )}
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        title="الزيارات السابقة"
+                                        className="text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400"
+                                        onClick={loadVisits}
+                                    >
+                                        <Star className="size-4 fill-amber-400 text-amber-500" />
+                                    </Button>
+                                </>
+                            )}
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="text-muted-foreground"
+                                onClick={() => onOpenChange(false)}
+                            >
+                                <X className="size-4" />
+                            </Button>
+                        </div>
                     </div>
                 </DialogHeader>
 
-                <div className="space-y-3 p-4">
+                <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3 md:p-4">
                     {loading && <DetailLoadingSkeleton />}
 
                     {!loading && invoice && view === 'detail' && (
                         <div className="space-y-3">
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                <EditableInvoiceField
-                                    label="رقم الفاتورة"
-                                    field="invoice_number"
-                                    displayValue={
-                                        <p className="text-primary text-2xl font-bold" dir="ltr">
-                                            {invoice.invoice_number}
+                            <div className="grid grid-cols-2 gap-2 md:gap-3">
+                                {invoice.is_expired_bonus ? (
+                                    <InfoCard label="المكافأة" icon={Gift}>
+                                        <p className="text-xl font-bold text-rose-600 md:text-2xl dark:text-rose-400">
+                                            {invoice.invoice_display_label}
                                         </p>
-                                    }
-                                    editingField={editingField}
-                                    editValue={editValue}
-                                    fieldError={fieldError}
-                                    saving={fieldSaving}
-                                    onStartEdit={startEdit}
-                                    onCancelEdit={cancelEdit}
-                                    onEditValueChange={setEditValue}
-                                    onSave={saveField}
-                                />
+                                    </InfoCard>
+                                ) : invoice.is_credit ? (
+                                    <InfoCard label="الرصيد" icon={Wallet}>
+                                        <p className="text-xl font-bold text-sky-600 md:text-2xl dark:text-sky-400">
+                                            {invoice.invoice_display_label}
+                                        </p>
+                                    </InfoCard>
+                                ) : invoice.is_bonus ? (
+                                    <InfoCard label="المكافأة" icon={Gift}>
+                                        <p className="text-xl font-bold text-emerald-600 md:text-2xl dark:text-emerald-400">
+                                            {invoice.invoice_display_label}
+                                        </p>
+                                    </InfoCard>
+                                ) : (
+                                    <EditableInvoiceField
+                                        label="رقم الفاتورة"
+                                        field="invoice_number"
+                                        displayValue={
+                                            <p className="text-primary text-xl font-bold md:text-2xl" dir="ltr">
+                                                {invoice.invoice_number}
+                                            </p>
+                                        }
+                                        editingField={editingField}
+                                        editValue={editValue}
+                                        fieldError={fieldError}
+                                        saving={fieldSaving}
+                                        onStartEdit={startEdit}
+                                        onCancelEdit={cancelEdit}
+                                        onEditValueChange={setEditValue}
+                                        onSave={saveField}
+                                    />
+                                )}
 
-                                <EditableInvoiceField
-                                    label="عدد الأطفال"
-                                    field="children_count"
-                                    displayValue={
-                                        <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{invoice.children_count}</p>
-                                    }
-                                    editingField={editingField}
-                                    editValue={editValue}
-                                    fieldError={fieldError}
-                                    saving={fieldSaving}
-                                    inputType="number"
-                                    onStartEdit={startEdit}
-                                    onCancelEdit={cancelEdit}
-                                    onEditValueChange={setEditValue}
-                                    onSave={saveField}
-                                />
+                                {invoice.is_expired_bonus ? (
+                                    <InfoCard label="عدد الأطفال">
+                                        <p className="text-xl font-bold text-emerald-600 md:text-2xl dark:text-emerald-400">{invoice.children_count}</p>
+                                    </InfoCard>
+                                ) : (
+                                    <EditableInvoiceField
+                                        label="عدد الأطفال"
+                                        field="children_count"
+                                        displayValue={
+                                            <p className="text-xl font-bold text-emerald-600 md:text-2xl dark:text-emerald-400">{invoice.children_count}</p>
+                                        }
+                                        editingField={editingField}
+                                        editValue={editValue}
+                                        fieldError={fieldError}
+                                        saving={fieldSaving}
+                                        inputType="number"
+                                        onStartEdit={startEdit}
+                                        onCancelEdit={cancelEdit}
+                                        onEditValueChange={setEditValue}
+                                        onSave={saveField}
+                                    />
+                                )}
 
                                 <InfoCard label="رقم الجوال">
-                                    {editingField === 'phone_number' ? (
+                                    {invoice.is_expired_bonus || editingField !== 'phone_number' ? (
+                                        <div className="group space-y-2">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <button
+                                                    type="button"
+                                                    className="hover:text-primary cursor-pointer text-base font-semibold transition-colors md:text-lg"
+                                                    dir="ltr"
+                                                    title="انقر للنسخ"
+                                                    onClick={() => copyPhoneNumber(invoice.phone_number)}
+                                                >
+                                                    {invoice.phone_number}
+                                                </button>
+                                                {!invoice.is_expired_bonus && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        title="تعديل"
+                                                        className="text-muted-foreground size-7 shrink-0 opacity-70 group-hover:opacity-100"
+                                                        onClick={() => startEdit('phone_number')}
+                                                    >
+                                                        <Pencil className="size-3.5" />
+                                                    </Button>
+                                                )}
+                                            </div>
+                                            {isAdmin && !invoice.is_expired_bonus && invoice.has_pending_bonus && (
+                                                <Badge className="mt-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                                                    مكافأة مضافة — بانتظار التفعيل
+                                                </Badge>
+                                            )}
+                                            {isAdmin && !invoice.is_expired_bonus && invoice.is_bonus_eligible && !invoice.is_bonus && !invoice.has_pending_bonus && (
+                                                <Badge className="mt-1 bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                                                    مؤهل للمكافأة — {invoice.visit_count}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    ) : (
                                         <div className="space-y-2">
                                             <Input
                                                 value={editValue}
@@ -707,46 +827,17 @@ export function InvoiceDetailDialog({
                                                 </Button>
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="group space-y-2">
-                                            <div className="flex items-start justify-between gap-2">
-                                                <button
-                                                    type="button"
-                                                    className="hover:text-primary cursor-pointer text-lg font-semibold transition-colors"
-                                                    dir="ltr"
-                                                    title="انقر للنسخ"
-                                                    onClick={() => copyPhoneNumber(invoice.phone_number)}
-                                                >
-                                                    {invoice.phone_number}
-                                                </button>
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    title="تعديل"
-                                                    className="text-muted-foreground size-7 shrink-0 opacity-70 group-hover:opacity-100"
-                                                    onClick={() => startEdit('phone_number')}
-                                                >
-                                                    <Pencil className="size-3.5" />
-                                                </Button>
-                                            </div>
-                                            {isAdmin && (
-                                                <div className="pt-1">
-                                                    <PhoneAdminActions onVisits={loadVisits} onBonus={() => setView('bonus')} />
-                                                </div>
-                                            )}
-                                        </div>
                                     )}
                                 </InfoCard>
 
                                 <InfoCard label="مدة الجلسة">
-                                    <div className="space-y-2">
-                                        <div className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1.5 text-sm font-semibold text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
-                                            <Timer className="size-3.5" />
+                                    <div className="flex flex-col gap-1.5">
+                                        <div className="inline-flex w-fit items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+                                            <Timer className="size-3" />
                                             {sessionDurationLabel(invoice)}
                                         </div>
                                         {invoice.extensions.length > 0 && (
-                                            <div className="flex flex-wrap items-center gap-1.5">
+                                            <div className="flex flex-wrap gap-1">
                                                 {invoice.extensions.map((ext) => (
                                                     <SessionBadge
                                                         key={ext.id}
@@ -756,36 +847,30 @@ export function InvoiceDetailDialog({
                                                 ))}
                                             </div>
                                         )}
-                                        {invoice.status === 'active' && (
+                                        {displayInvoice?.status === 'active' && (
                                             <p
                                                 className={cn(
-                                                    'text-sm font-medium',
-                                                    invoice.remaining_minutes === null
+                                                    'hidden text-sm font-medium md:block',
+                                                    displayInvoice.remaining_minutes === null
                                                         ? 'text-muted-foreground'
-                                                        : remainingTimeTone(invoice.remaining_minutes),
+                                                        : remainingTimeTextClass(displayInvoice.remaining_minutes),
                                                 )}
                                             >
-                                                متبقي: {formatRemainingMinutes(invoice.remaining_minutes)}
+                                                متبقي: {formatRemainingMinutes(displayInvoice.remaining_minutes)}
                                             </p>
                                         )}
                                     </div>
                                 </InfoCard>
 
-                                <DateTimeCard label="وقت البداية" dateTime={startDateTime} />
-                                <DateTimeCard label="وقت النهاية" dateTime={endDateTime} />
+                                <DateTimeCard
+                                    label={invoice.is_expired_bonus ? 'تاريخ الإضافة' : 'وقت البداية'}
+                                    dateTime={startDateTime}
+                                />
+                                <DateTimeCard
+                                    label={invoice.is_expired_bonus ? 'انتهت في' : 'وقت النهاية'}
+                                    dateTime={endDateTime}
+                                />
                             </div>
-
-                            {invoice.bonuses.length > 0 && (
-                                <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-3">
-                                    <p className="text-sm font-medium">المكافآت ({invoice.bonus_count})</p>
-                                    {invoice.bonuses.map((bonus) => (
-                                        <p key={bonus.id} className="text-muted-foreground text-sm">
-                                            <span className="text-foreground font-medium">{bonus.title}</span>
-                                            {bonus.notes ? ` — ${bonus.notes}` : ''}
-                                        </p>
-                                    ))}
-                                </div>
-                            )}
 
                             {message && (
                                 <Alert className="py-2">
@@ -798,56 +883,70 @@ export function InvoiceDetailDialog({
                                 </Alert>
                             )}
 
-                            {showReceptionActions && (
-                                <div className={cn('grid gap-2 border-t pt-3', canExtend ? 'grid-cols-2' : 'grid-cols-1')}>
-                                    {canExtend && (
-                                        <Button type="button" size="sm" variant="secondary" onClick={() => setView('extend')}>
-                                            <Timer className="size-4" />
-                                            تمديد
-                                        </Button>
-                                    )}
-                                    <Button type="button" size="sm" variant="destructive" onClick={checkout}>
-                                        <LogOut className="size-4" />
-                                        خروج
-                                    </Button>
-                                </div>
-                            )}
-                            {showReactivate && invoice.status === 'completed' && (
-                                <div className="flex justify-center border-t pt-3">
-                                    <Button type="button" size="sm" variant="secondary" onClick={reactivate}>
-                                        <RotateCcw className="size-4" />
-                                        إعادة تفعيل
-                                    </Button>
-                                </div>
-                            )}
                         </div>
                     )}
 
                     {view === 'visits' && (
-                        <PreviousVisitsPanel payload={visitsPayload} loading={visitsLoading} currentInvoiceId={invoiceId} />
+                        <PreviousVisitsPanel
+                            payload={visitsPayload}
+                            loading={visitsLoading}
+                            pageLoading={visitsPageLoading}
+                            currentInvoiceId={activeInvoiceId}
+                            currentExpiredBonusId={activeExpiredBonusId}
+                            onVisitClick={handleVisitClick}
+                            onPageChange={(nextPage) => void loadVisitsPage(nextPage, false)}
+                        />
                     )}
 
                     {view === 'bonus' && (
-                        <form onSubmit={submitBonus} className="space-y-3">
+                        <form onSubmit={submitBonus} className="space-y-4">
                             <p className="text-muted-foreground text-sm">
                                 إضافة مكافأة لـ <span dir="ltr">{invoice?.phone_number}</span>
+                                {invoice && (
+                                    <span className="text-foreground font-medium"> — {invoice.visit_count}</span>
+                                )}
                             </p>
                             <div className="space-y-2">
-                                <Label htmlFor="bonus_title">عنوان المكافأة</Label>
-                                <Input id="bonus_title" value={bonusTitle} onChange={(e) => setBonusTitle(e.target.value)} required />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="bonus_notes">ملاحظات</Label>
-                                <textarea
-                                    id="bonus_notes"
-                                    className="border-input bg-background flex min-h-20 w-full rounded-md border px-3 py-2 text-sm"
-                                    value={bonusNotes}
-                                    onChange={(e) => setBonusNotes(e.target.value)}
+                                <Label htmlFor="bonus_children_count">عدد الأطفال</Label>
+                                <Input
+                                    id="bonus_children_count"
+                                    type="number"
+                                    min={1}
+                                    max={20}
+                                    value={bonusChildrenCount}
+                                    onChange={(e) =>
+                                        setBonusChildrenCount(e.target.value === '' ? '' : Number(e.target.value))
+                                    }
+                                    placeholder="أدخل عدد الأطفال"
+                                    required
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <Label>مدة جلسة المكافأة</Label>
+                                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                                    {sessionDurations.map((session) => (
+                                        <SessionCard
+                                            key={session.id}
+                                            session={session}
+                                            compact
+                                            boxShadowActive={bonusSessionDurationId === session.id}
+                                            onClick={() => setBonusSessionDurationId(session.id)}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                            {bonusError && (
+                                <Alert variant="destructive" className="py-2">
+                                    <AlertDescription className="text-sm">{bonusError}</AlertDescription>
+                                </Alert>
+                            )}
                             <DialogFooter>
-                                <Button type="submit" disabled={bonusSubmitting} size="sm">
-                                    {bonusSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : 'حفظ المكافأة'}
+                                <Button
+                                    type="submit"
+                                    disabled={bonusSubmitting || !bonusSessionDurationId || bonusChildrenCount === ''}
+                                    size="sm"
+                                >
+                                    {bonusSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : 'إضافة المكافأة'}
                                 </Button>
                             </DialogFooter>
                         </form>
@@ -856,24 +955,75 @@ export function InvoiceDetailDialog({
                     {view === 'extend' && (
                         <div className="space-y-3">
                             <p className="text-muted-foreground text-sm">اختر مدة التمديد</p>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                                 {sessionDurations.map((session) => (
                                     <SessionCard
                                         key={session.id}
                                         session={session}
+                                        compact
                                         boxShadowActive={extendDurationId === session.id}
                                         onClick={() => setExtendDurationId(session.id)}
                                     />
                                 ))}
                             </div>
-                            <div className="flex justify-center border-t pt-3">
-                                <Button type="button" size="sm" disabled={!extendDurationId} onClick={extend}>
-                                    تمديد
+                            <div className="border-t pt-3">
+                                <Button
+                                    type="button"
+                                    className="min-h-11 w-full"
+                                    disabled={extendSubmitting || !extendDurationId}
+                                    onClick={extend}
+                                >
+                                    {extendSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : 'تمديد'}
                                 </Button>
                             </div>
                         </div>
                     )}
                 </div>
+
+                {showDetailFooter && invoice && (
+                    <div className="shrink-0 space-y-2 border-t bg-background p-4">
+                        {canShowReceptionActions && (
+                            <div className={cn('flex gap-2', canExtend ? 'flex-row' : 'flex-col')}>
+                                {canExtend && (
+                                    <Button
+                                        type="button"
+                                        className="min-h-11 flex-1"
+                                        variant="secondary"
+                                        onClick={() => setView('extend')}
+                                    >
+                                        <Timer className="size-4" />
+                                        تمديد
+                                    </Button>
+                                )}
+                                <Button
+                                    type="button"
+                                    className={cn('min-h-11', canExtend ? 'flex-1' : 'w-full')}
+                                    variant="destructive"
+                                    onClick={checkout}
+                                >
+                                    <LogOut className="size-4" />
+                                    خروج
+                                </Button>
+                            </div>
+                        )}
+                        {(canShowReactivate || canShowDeleteCompleted) && (
+                            <div className="flex flex-row gap-2">
+                                {canShowReactivate && (
+                                    <Button type="button" className="min-h-11 flex-1" variant="secondary" onClick={reactivate}>
+                                        <RotateCcw className="size-4" />
+                                        إعادة تفعيل
+                                    </Button>
+                                )}
+                                {canShowDeleteCompleted && (
+                                    <Button type="button" className="min-h-11 flex-1" variant="destructive" onClick={deleteFromRecord}>
+                                        <Trash2 className="size-4" />
+                                        حذف من السجل
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
             </DialogContent>
         </Dialog>
     );

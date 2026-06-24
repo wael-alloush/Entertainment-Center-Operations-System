@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\AttendanceRecord;
 use App\Models\Employee;
 use App\Models\SessionDuration;
@@ -8,9 +9,10 @@ use App\Models\User;
 use App\Services\AttendanceService;
 use Database\Seeders\EmployeeSeeder;
 use Database\Seeders\SessionDurationSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 
-uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     $this->seed([SessionDurationSeeder::class, EmployeeSeeder::class]);
@@ -37,6 +39,7 @@ it('shows management page for admin users', function (): void {
             ->component('management/index')
             ->has('sessionDurations', 4)
             ->has('employees', 3)
+            ->has('users', 2)
             ->where('workSchedule.start_time', '08:00'));
 });
 
@@ -129,6 +132,83 @@ it('creates and updates employees from management', function (): void {
     expect($employee->fresh())
         ->name->toBe('موظف محدث')
         ->is_active->toBeFalse();
+});
+
+it('permanently deletes an employee and related attendance records', function (): void {
+    $employee = Employee::query()->firstOrFail();
+
+    app(AttendanceService::class)->checkIn($employee);
+
+    expect($employee->attendanceRecords()->count())->toBe(1);
+
+    $this->actingAs($this->admin)
+        ->delete(route('management.employees.destroy', $employee))
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect(Employee::query()->find($employee->id))->toBeNull()
+        ->and(AttendanceRecord::query()->where('employee_id', $employee->id)->count())->toBe(0);
+});
+
+it('denies non-admin users from deleting employees', function (): void {
+    $employee = Employee::query()->firstOrFail();
+
+    $this->actingAs($this->reception)
+        ->delete(route('management.employees.destroy', $employee))
+        ->assertForbidden();
+
+    expect(Employee::query()->find($employee->id))->not->toBeNull();
+});
+
+it('creates and updates users from management', function (): void {
+    $this->actingAs($this->admin)
+        ->post(route('management.users.store'), [
+            'name' => 'مستخدم جديد',
+            'email' => 'new-user@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => UserRole::Reception->value,
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    $user = User::query()->where('email', 'new-user@example.com')->first();
+
+    expect($user)->not->toBeNull()
+        ->and($user->name)->toBe('مستخدم جديد')
+        ->and($user->role)->toBe(UserRole::Reception)
+        ->and($user->is_active)->toBeTrue();
+
+    $this->actingAs($this->admin)
+        ->patch(route('management.users.update', $user), [
+            'name' => 'مستخدم محدث',
+            'email' => 'updated-user@example.com',
+            'role' => UserRole::Admin->value,
+            'is_active' => false,
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect($user->fresh())
+        ->name->toBe('مستخدم محدث')
+        ->email->toBe('updated-user@example.com')
+        ->role->toBe(UserRole::Admin)
+        ->is_active->toBeFalse();
+});
+
+it('prevents admin from disabling their own account', function (): void {
+    $this->actingAs($this->admin)
+        ->from(route('management.index'))
+        ->patch(route('management.users.update', $this->admin), [
+            'name' => $this->admin->name,
+            'email' => $this->admin->email,
+            'role' => UserRole::Admin->value,
+            'is_active' => false,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors('is_active');
+
+    expect($this->admin->fresh()->is_active)->toBeTrue();
 });
 
 it('updates work schedule and uses it for late minutes', function (): void {

@@ -1,7 +1,8 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, useForm, usePage } from '@inertiajs/react';
 import { LoaderCircle } from 'lucide-react';
 import { FormEventHandler } from 'react';
 
+import { FlashAlert } from '@/components/raad/flash-alert';
 import InputError from '@/components/input-error';
 import TextLink from '@/components/text-link';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ interface LoginProps {
 }
 
 export default function Login({ status, canResetPassword }: LoginProps) {
+    const { flash } = usePage<{ flash: { success?: string; error?: string } }>().props;
     const { data, setData, post, processing, errors, reset } = useForm<LoginForm>({
         email: '',
         password: '',
@@ -38,6 +40,9 @@ export default function Login({ status, canResetPassword }: LoginProps) {
     return (
         <AuthLayout title="تسجيل الدخول" description="أدخل بيانات حسابك للوصول إلى لوحة التحكم">
             <Head title="تسجيل الدخول" />
+
+            <FlashAlert message={flash?.success} />
+            <FlashAlert message={flash?.error} variant="error" />
 
             <form className="flex flex-col gap-6" onSubmit={submit}>
                 <div className="grid gap-5">
@@ -97,6 +102,13 @@ export default function Login({ status, canResetPassword }: LoginProps) {
                         {processing && <LoaderCircle className="size-4 animate-spin" />}
                         دخول
                     </Button>
+                </div>
+
+                <div className="text-muted-foreground text-center text-sm">
+                    جهاز جديد؟{' '}
+                    <TextLink href={route('device.register')} tabIndex={6}>
+                        توثيق الجهاز برمز
+                    </TextLink>
                 </div>
 
                 <div className="text-muted-foreground text-center text-sm">

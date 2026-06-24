@@ -1,5 +1,5 @@
 <?php
 
-it('redirects home to dashboard', function () {
-    $this->get('/')->assertRedirect(route('dashboard'));
+it('redirects home to active invoices', function () {
+    $this->get('/')->assertRedirect(route('invoices.active'));
 });

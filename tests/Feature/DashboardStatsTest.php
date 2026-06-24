@@ -3,29 +3,26 @@
 use App\Models\Invoice;
 use App\Models\User;
 use Database\Seeders\SessionDurationSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     $this->seed(SessionDurationSeeder::class);
     $this->user = User::factory()->create();
 });
 
-it('renders dashboard with stats', function (): void {
-    Invoice::factory()->active()->count(2)->create();
-    Invoice::factory()->completed()->create();
-
+it('redirects legacy dashboard url to active invoices', function (): void {
     $this->actingAs($this->user)
-        ->get(route('dashboard'))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->component('dashboard')
-            ->has('stats')
-            ->where('stats.active_invoices', 2));
+        ->get('/dashboard')
+        ->assertRedirect(route('invoices.active'));
 });
 
 it('paginates completed invoices', function (): void {
-    Invoice::factory()->completed()->count(30)->create();
+    Invoice::factory()->completed()->count(30)->create([
+        'entered_at' => now(),
+        'exited_at' => now(),
+    ]);
 
     $this->actingAs($this->user)
         ->get(route('invoices.completed'))

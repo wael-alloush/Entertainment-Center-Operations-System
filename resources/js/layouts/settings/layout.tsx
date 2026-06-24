@@ -7,17 +7,17 @@ import { Link } from '@inertiajs/react';
 
 const sidebarNavItems: NavItem[] = [
     {
-        title: 'Profile',
+        title: 'الملف الشخصي',
         url: '/settings/profile',
         icon: null,
     },
     {
-        title: 'Password',
+        title: 'كلمة المرور',
         url: '/settings/password',
         icon: null,
     },
     {
-        title: 'Appearance',
+        title: 'المظهر',
         url: '/settings/appearance',
         icon: null,
     },
@@ -28,7 +28,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 
     return (
         <div className="px-4 py-6">
-            <Heading title="Settings" description="Manage your profile and account settings" />
+            <Heading title="الإعدادات" description="إدارة ملفك الشخصي وإعدادات حسابك" />
 
             <div className="flex flex-col space-y-8 lg:flex-row lg:space-y-0 lg:space-x-12">
                 <aside className="w-full max-w-xl lg:w-48">
@@ -39,7 +39,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                                 size="sm"
                                 variant="ghost"
                                 asChild
-                                className={cn('w-full justify-start', {
+                                className={cn('min-h-11 w-full justify-start', {
                                     'bg-muted': currentPath === item.url,
                                 })}
                             >

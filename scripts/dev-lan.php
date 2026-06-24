@@ -12,7 +12,7 @@ putenv("APP_URL={$url}");
 putenv("VITE_HMR_HOST={$ip}");
 
 echo PHP_EOL;
-echo '  رعد — وضع الشبكة المحلية'.PHP_EOL;
+echo '  '.getenv('APP_NAME').' — وضع الشبكة المحلية'.PHP_EOL;
 echo '  ─────────────────────────'.PHP_EOL;
 echo "  من هذا الجهاز:  http://localhost:{$port}".PHP_EOL;
 echo "  من جهاز آخر:    {$url}".PHP_EOL;

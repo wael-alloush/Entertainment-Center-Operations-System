@@ -1,5 +1,6 @@
 import '../css/app.css';
 
+import { ConfirmDialogProvider } from '@/components/raad/confirm-dialog';
 import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
@@ -18,7 +19,11 @@ createInertiaApp({
     setup({ el, App, props }) {
         const root = createRoot(el);
 
-        root.render(<App {...props} />);
+        root.render(
+            <ConfirmDialogProvider>
+                <App {...props} />
+            </ConfirmDialogProvider>,
+        );
     },
     progress: {
         color: '#4B5563',

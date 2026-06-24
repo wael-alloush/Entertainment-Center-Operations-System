@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { EmployeeAttendanceHistoryPayload, EmployeeAttendanceRecord } from '@/types/domain';
-import { Clock3, History, LogIn, LogOut, X } from 'lucide-react';
+import { Clock3, CalendarOff, History, LogIn, LogOut, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 interface EmployeeAttendanceDialogProps {
@@ -31,13 +31,34 @@ function lateBadgeClass(label: string): string {
 }
 
 function AttendanceRecordCard({ record }: { record: EmployeeAttendanceRecord }) {
+    const isDayOff = record.is_day_off === true;
     const hasCheckout = record.checked_out_at !== '—';
+
+    if (isDayOff) {
+        return (
+            <article className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/25 px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">
+                        <span dir="ltr">{record.work_date}</span>
+                        {record.work_day_name && <span className="text-muted-foreground mx-1">·</span>}
+                        <span>{record.work_day_name}</span>
+                    </p>
+                    <Badge variant="outline" className="h-5 gap-0.5 border-muted-foreground/30 bg-muted px-1.5 text-[10px] text-muted-foreground">
+                        <CalendarOff className="size-2.5" />
+                        إجازة
+                    </Badge>
+                </div>
+            </article>
+        );
+    }
 
     return (
         <article className="rounded-lg border bg-card px-3 py-2">
             <div className="mb-1.5 flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold" dir="ltr">
-                    {record.work_date}
+                <p className="text-sm font-semibold">
+                    <span dir="ltr">{record.work_date}</span>
+                    {record.work_day_name && <span className="text-muted-foreground mx-1">·</span>}
+                    <span>{record.work_day_name}</span>
                 </p>
                 {record.late_label !== '—' && (
                     <Badge variant="outline" className={cn('h-5 gap-0.5 px-1.5 text-[10px]', lateBadgeClass(record.late_label))}>
@@ -129,7 +150,7 @@ export function EmployeeAttendanceDialog({ employeeId, employeeName, open, onOpe
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-h-[90vh] max-w-xl gap-0 overflow-hidden p-0 [&>button.absolute]:hidden">
+            <DialogContent className="raad-dialog-surface max-h-[90vh] gap-0 overflow-hidden p-0 md:max-w-xl [&>button.absolute]:hidden">
                 <DialogHeader className="border-b bg-muted/30 px-4 py-4 text-right">
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1 space-y-1">

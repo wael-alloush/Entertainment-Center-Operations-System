@@ -62,12 +62,4 @@ class InvoiceFactory extends Factory
             ];
         });
     }
-
-    public function needsParentCall(): static
-    {
-        return $this->state(fn (array $attributes): array => [
-            'needs_parent_call' => true,
-            'parent_call_marked_at' => now(),
-        ]);
-    }
 }

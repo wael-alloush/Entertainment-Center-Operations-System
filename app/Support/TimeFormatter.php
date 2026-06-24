@@ -38,6 +38,15 @@ class TimeFormatter
         return $dateTime?->format('Y-m-d');
     }
 
+    public static function formatArabicWeekday(?CarbonInterface $dateTime): ?string
+    {
+        if ($dateTime === null) {
+            return null;
+        }
+
+        return $dateTime->locale('ar')->translatedFormat('l');
+    }
+
     public static function formatLateMinutes(?int $minutes): ?string
     {
         if ($minutes === null) {

@@ -19,7 +19,7 @@ if ($buildExitCode !== 0) {
 }
 
 echo PHP_EOL;
-echo '  رعد — جاهز على الشبكة'.PHP_EOL;
+echo '  '.getenv('APP_NAME').' — جاهز على الشبكة'.PHP_EOL;
 echo '  ─────────────────────────'.PHP_EOL;
 echo "  من هذا الجهاز:  http://localhost:{$port}".PHP_EOL;
 echo "  من جهاز آخر:    {$url}".PHP_EOL;

@@ -136,16 +136,32 @@
 }
 
 @layer components {
-    .raad-nav-active {
+    .raad-icon-chip {
+        @apply flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors;
+    }
+
+    [data-sidebar='sidebar'] [data-sidebar='menu-button'][data-active='true'] {
         @apply bg-primary text-primary-foreground shadow-md shadow-primary/20;
     }
 
-    .raad-nav-active [data-nav-icon] {
-        @apply bg-primary-foreground/15 text-primary-foreground;
+    .group[data-collapsible='icon'] [data-sidebar='menu-button'][data-active='true'] {
+        @apply bg-primary text-white shadow-none;
     }
 
-    .raad-icon-chip {
-        @apply flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors;
+    .group[data-collapsible='icon'] [data-sidebar='menu-button'][data-active='true'] [data-nav-icon] {
+        @apply bg-transparent text-white shadow-none;
+    }
+
+    .group[data-collapsible='icon'] [data-sidebar='menu-button'][data-active='true'] svg {
+        @apply text-white;
+    }
+
+    .group[data-collapsible='icon'] [data-sidebar='menu-button']:not([data-active='true']) svg {
+        @apply text-sidebar-foreground;
+    }
+
+    [data-sidebar='sidebar'] [data-sidebar='menu-button'][data-active='true'] [data-nav-icon] {
+        @apply bg-primary-foreground text-primary shadow-sm;
     }
 
     .raad-table-head {
@@ -162,5 +178,49 @@
 
     .raad-glass {
         @apply bg-card/90 backdrop-blur-sm;
+    }
+
+    .raad-page-title {
+        @apply text-xl font-bold tracking-tight sm:text-2xl;
+    }
+
+    .raad-card-header {
+        @apply flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between;
+    }
+
+    .raad-session-grid {
+        @apply grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4;
+    }
+
+    .raad-dialog-surface {
+        @apply md:max-w-lg;
+    }
+
+    .raad-dialog-surface-lg {
+        @apply md:max-w-2xl;
+    }
+
+    .raad-dialog-surface-xl {
+        @apply md:max-w-4xl;
+    }
+
+    .raad-dialog-surface-2xl {
+        @apply md:max-w-6xl;
+    }
+
+    .raad-filter-dates {
+        @apply flex w-full flex-col gap-2 min-[400px]:w-auto min-[400px]:flex-row;
+    }
+
+    .raad-mobile-action-grid {
+        @apply grid grid-cols-1 gap-2 min-[400px]:grid-cols-2;
+    }
+
+    .raad-data-table-desktop {
+        @apply hidden overflow-x-auto md:block;
+    }
+
+    .raad-data-table-mobile {
+        @apply space-y-2.5 p-2.5 md:hidden;
     }
 }

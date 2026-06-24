@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\InvoiceService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -47,7 +48,15 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => $request->session()->get('success'),
                 'error' => $request->session()->get('error'),
+                'generated_device_code' => $request->session()->get('generated_device_code'),
+                'generated_device_code_expires_at' => $request->session()->get('generated_device_code_expires_at'),
             ],
+            'pendingBonusCount' => fn (): int => $request->user() !== null
+                ? app(InvoiceService::class)->pendingBonusCount()
+                : 0,
+            'pendingCreditCount' => fn (): int => $request->user() !== null
+                ? app(InvoiceService::class)->pendingCreditCount()
+                : 0,
         ]);
     }
 }

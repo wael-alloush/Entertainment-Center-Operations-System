@@ -19,12 +19,15 @@ export interface NavItem {
     url: string;
     icon?: LucideIcon | null;
     isActive?: boolean;
+    badge?: number;
 }
 
 export interface SharedData {
     name: string;
     quote: { message: string; author: string };
     auth: Auth;
+    pendingBonusCount: number;
+    pendingCreditCount: number;
     [key: string]: unknown;
 }
 

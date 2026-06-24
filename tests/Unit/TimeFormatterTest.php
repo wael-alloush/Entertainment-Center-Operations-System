@@ -42,3 +42,8 @@ it('formats dates for visit history', function (): void {
 
     expect(TimeFormatter::formatDate($time))->toBe('2026-06-09');
 });
+
+it('formats arabic weekday names', function (): void {
+    expect(TimeFormatter::formatArabicWeekday(Carbon::parse('2026-06-12')))->toBe('الجمعة');
+    expect(TimeFormatter::formatArabicWeekday(Carbon::parse('2026-06-08')))->toBe('الاثنين');
+});

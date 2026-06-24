@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Enums\InvoiceStatus;
+use App\Support\PhoneSearch;
+use Database\Factories\InvoiceFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Invoice extends Model
 {
-    /** @use HasFactory<\Database\Factories\InvoiceFactory> */
+    /** @use HasFactory<InvoiceFactory> */
     use HasFactory;
 
     /**
@@ -24,9 +26,11 @@ class Invoice extends Model
         'children_count',
         'session_duration_id',
         'status',
-        'needs_parent_call',
-        'parent_call_marked_at',
-        'parent_call_marked_by',
+        'is_bonus',
+        'bonus_display_number',
+        'is_credit',
+        'credit_display_number',
+        'counts_as_visit',
         'entered_at',
         'expected_exit_at',
         'exited_at',
@@ -40,8 +44,11 @@ class Invoice extends Model
     {
         return [
             'status' => InvoiceStatus::class,
-            'needs_parent_call' => 'boolean',
-            'parent_call_marked_at' => 'datetime',
+            'is_bonus' => 'boolean',
+            'bonus_display_number' => 'integer',
+            'is_credit' => 'boolean',
+            'credit_display_number' => 'integer',
+            'counts_as_visit' => 'boolean',
             'children_count' => 'integer',
             'entered_at' => 'datetime',
             'expected_exit_at' => 'datetime',
@@ -67,11 +74,6 @@ class Invoice extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
-    }
-
-    public function parentCallMarker(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'parent_call_marked_by');
     }
 
     public function bonuses(): HasMany
@@ -107,10 +109,7 @@ class Invoice extends Model
             return $query;
         }
 
-        return $query->where(function (Builder $query) use ($term): void {
-            $query->where('invoice_number', 'like', "%{$term}%")
-                ->orWhere('phone_number', 'like', "%{$term}%");
-        });
+        return PhoneSearch::applyToInvoiceQuery($query, $term);
     }
 
     /**
