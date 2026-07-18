@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\BonusProgramController;
 use App\Http\Controllers\CreditController;
 use App\Http\Controllers\DeviceRegistrationController;
@@ -22,6 +23,10 @@ Route::get('device/register', [DeviceRegistrationController::class, 'create'])->
 Route::post('device/register', [DeviceRegistrationController::class, 'store'])->name('device.register.store');
 
 Route::middleware(['auth', 'active', 'trusted'])->group(function () {
+    Route::post('assistant/chat', [AssistantController::class, 'chat'])
+        ->middleware('throttle:30,1')
+        ->name('assistant.chat');
+
     Route::get('invoices/active', [InvoiceController::class, 'active'])->name('invoices.active');
     Route::get('invoices/active/changes', [InvoiceController::class, 'activeChanges'])->name('invoices.active.changes');
     Route::get('invoices/completed', [InvoiceController::class, 'completed'])->name('invoices.completed');
