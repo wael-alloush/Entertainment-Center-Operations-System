@@ -118,6 +118,7 @@ it('runs bonus expiry check once per day after the configured time', function ()
         'next_display_number' => 1,
     ]);
     Cache::forget('settings.bonus_program');
+    Setting::query()->where('key', BonusProgramService::LAST_EXPIRY_RUN_SETTING_KEY)->delete();
 
     Carbon::setTestNow('2026-06-10 19:30:00');
 

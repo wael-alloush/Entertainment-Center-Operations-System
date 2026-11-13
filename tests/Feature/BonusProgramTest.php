@@ -159,3 +159,80 @@ it('cycles bonus display numbers from 1 to 100', function (): void {
 
     expect(Invoice::query()->find($secondPendingBonus->fresh()->invoice_id)?->bonus_display_number)->toBe(1);
 });
+
+it('counts eligible customers without a pending bonus record', function (): void {
+    $service = app(BonusProgramService::class);
+
+    Setting::setValue('bonus_program', [
+        'visit_threshold' => 4,
+        'validity_days' => 30,
+        'next_display_number' => 1,
+    ]);
+    Cache::forget('settings.bonus_program');
+
+    Customer::factory()->create(['phone_number' => '0599000101', 'visit_count' => 3]);
+    Customer::factory()->create(['phone_number' => '0599000102', 'visit_count' => 4]);
+    Customer::factory()->create(['phone_number' => '0599000103', 'visit_count' => 9]);
+
+    expect($service->eligibleCustomersWithoutPendingBonusCount())->toBe(2);
+});
+
+it('excludes eligible customers who already have a pending bonus', function (): void {
+    $service = app(BonusProgramService::class);
+    $sessionDurationId = SessionDuration::query()->value('id');
+
+    Setting::setValue('bonus_program', [
+        'visit_threshold' => 4,
+        'validity_days' => 30,
+        'next_display_number' => 1,
+    ]);
+    Cache::forget('settings.bonus_program');
+
+    $eligibleCustomer = Customer::factory()->create(['phone_number' => '0599000104', 'visit_count' => 4]);
+    Customer::factory()->create(['phone_number' => '0599000105', 'visit_count' => 4]);
+
+    $sourceInvoice = Invoice::factory()->completed()->create([
+        'customer_id' => $eligibleCustomer->id,
+        'phone_number' => $eligibleCustomer->phone_number,
+        'session_duration_id' => $sessionDurationId,
+    ]);
+
+    $service->addBonus($sourceInvoice, [
+        'children_count' => 2,
+        'session_duration_id' => $sessionDurationId,
+    ]);
+
+    expect($service->eligibleCustomersWithoutPendingBonusCount())->toBe(1);
+});
+
+it('shares eligible bonus count with admins only', function (): void {
+    Customer::factory()->create(['phone_number' => '0599000106', 'visit_count' => 4]);
+
+    $this->actingAs($this->admin)
+        ->get(route('invoices.active'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('eligibleBonusWithoutPendingCount', 1));
+
+    $this->actingAs($this->reception)
+        ->get(route('invoices.active'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('eligibleBonusWithoutPendingCount', 0));
+});
+
+it('lists eligible customers without pending bonus for admins', function (): void {
+    Customer::factory()->create(['phone_number' => '0599000201', 'visit_count' => 4]);
+    Customer::factory()->create(['phone_number' => '0599000202', 'visit_count' => 3]);
+
+    $this->actingAs($this->admin)
+        ->getJson(route('invoices.bonuses.eligible-without-pending'))
+        ->assertOk()
+        ->assertJsonPath('customers.total', 1)
+        ->assertJsonPath('customers.data.0.phone_number', '0599000201')
+        ->assertJsonPath('customers.data.0.visit_count', 4);
+});
+
+it('forbids eligible customers list for reception users', function (): void {
+    $this->actingAs($this->reception)
+        ->getJson(route('invoices.bonuses.eligible-without-pending'))
+        ->assertForbidden();
+});

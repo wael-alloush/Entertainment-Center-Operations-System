@@ -119,6 +119,25 @@ export interface ActiveInvoiceChanges {
     summary: InvoiceSummary | null;
 }
 
+export interface EligibleBonusCustomer {
+    id: number;
+    phone_number: string;
+    visit_count: number;
+}
+
+export interface PaginatedEligibleBonusCustomers {
+    data: EligibleBonusCustomer[];
+    links: Array<{
+        url: string | null;
+        label: string;
+        active: boolean;
+    }>;
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+}
+
 export interface PendingBonus {
     id: number;
     phone_number: string;

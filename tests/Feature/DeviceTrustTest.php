@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Employee;
+use App\Models\Invoice;
 use App\Models\Setting;
 use App\Models\TrustedDevice;
 use App\Models\User;
@@ -8,6 +9,7 @@ use App\Services\DeviceTrustService;
 use Database\Seeders\EmployeeSeeder;
 use Database\Seeders\SessionDurationSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -19,6 +21,7 @@ beforeEach(function (): void {
     $this->deviceTrustService = app(DeviceTrustService::class);
 
     Setting::setValue('device_trust', ['enabled' => true]);
+    Setting::setValue('work_schedule', ['start_time' => '23:00']);
 });
 
 function enableDeviceTrust(): void
@@ -75,7 +78,28 @@ it('generates and redeems a one-time device registration code', function (): voi
 it('blocks reception users on untrusted devices when device trust is enabled', function (): void {
     $this->actingAs($this->reception)
         ->get(route('invoices.active'))
-        ->assertRedirect(route('device.register'));
+        ->assertRedirect(route('device.register'))
+        ->assertSessionMissing('error');
+});
+
+it('blocks reception invoice updates on untrusted devices when device trust is enabled', function (): void {
+    $invoice = Invoice::factory()->active()->create(['children_count' => 2]);
+
+    $this->actingAs($this->reception)
+        ->patchJson(route('invoices.update', $invoice), [
+            'children_count' => 3,
+        ])
+        ->assertForbidden();
+});
+
+it('does not offer passkey restore when no passkeys are registered', function (): void {
+    $this->actingAs($this->reception)
+        ->get(route('device.register'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('auth/register-device')
+            ->where('isAuthenticated', true)
+            ->where('canAttemptPasskeyRestore', false));
 });
 
 it('allows admin users on untrusted devices when device trust is enabled', function (): void {
@@ -230,4 +254,114 @@ it('can enable and disable device trust from management', function (): void {
         ->assertSessionHas('success');
 
     expect(Setting::getValue('device_trust'))->toBe(['enabled' => false]);
+});
+
+it('normalizes webauthn origins without default https port', function (): void {
+    $service = app(DeviceTrustService::class);
+
+    $request = Request::create(
+        'https://example.com/device/webauthn/register',
+        'POST',
+        [],
+        [],
+        [],
+        [
+            'HTTP_X_FORWARDED_PROTO' => 'https',
+            'HTTP_X_FORWARDED_HOST' => 'example.com',
+            'HTTP_X_FORWARDED_PORT' => '443',
+        ],
+    );
+
+    expect($service->getWebAuthnOrigin($request))->toBe('https://example.com')
+        ->and($service->webAuthnAllowedOrigins($request))->toContain('https://example.com');
+});
+
+it('requires credential payload for webauthn registration', function (): void {
+    $token = (string) Str::uuid();
+    $plainCode = generateDeviceCode($this->admin, 'استقبال WebAuthn');
+
+    $this->withCookie('buds_device', $token)
+        ->actingAs($this->reception)
+        ->post(route('device.webauthn.register'), [
+            'code' => $plainCode,
+            'name' => 'استقبال WebAuthn',
+        ])
+        ->assertSessionHasErrors('credential');
+
+    expect(TrustedDevice::query()->count())->toBe(0);
+});
+
+it('shows device registration page for untrusted devices', function (): void {
+    TrustedDevice::query()->create([
+        'name' => 'استقبال Passkey',
+        'token_hash' => hash('sha256', (string) Str::uuid()),
+        'user_agent' => 'Test Agent',
+        'is_active' => true,
+        'allows_attendance' => false,
+        'authenticator_type' => 'webauthn',
+        'credential_id' => 'test-credential-id',
+        'public_key' => 'test-public-key',
+        'credential_counter' => 0,
+        'created_by' => $this->admin->id,
+    ]);
+
+    $this->actingAs($this->reception)
+        ->get(route('device.register'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('auth/register-device')
+            ->where('isAuthenticated', true)
+            ->where('canAttemptPasskeyRestore', true));
+
+    $this->actingAs($this->reception)
+        ->get(route('device.webauthn.assertion-options'))
+        ->assertOk()
+        ->assertJsonStructure(['challenge', 'rpId', 'allowCredentials']);
+});
+
+it('requires credential payload for webauthn restore', function (): void {
+    TrustedDevice::query()->create([
+        'name' => 'استقبال Passkey',
+        'token_hash' => hash('sha256', (string) Str::uuid()),
+        'user_agent' => 'Test Agent',
+        'is_active' => true,
+        'allows_attendance' => false,
+        'authenticator_type' => 'webauthn',
+        'credential_id' => 'test-credential-id',
+        'public_key' => 'test-public-key',
+        'credential_counter' => 0,
+        'created_by' => $this->admin->id,
+    ]);
+
+    $this->actingAs($this->reception)
+        ->post(route('device.webauthn.restore'))
+        ->assertSessionHasErrors('credential');
+});
+
+it('reassigns device token after webauthn restore helper updates token hash', function (): void {
+    $oldToken = (string) Str::uuid();
+    $newToken = (string) Str::uuid();
+
+    $device = TrustedDevice::query()->create([
+        'name' => 'استقبال Passkey',
+        'token_hash' => hash('sha256', $oldToken),
+        'user_agent' => 'Test Agent',
+        'is_active' => true,
+        'allows_attendance' => false,
+        'authenticator_type' => 'webauthn',
+        'credential_id' => 'test-credential-id',
+        'public_key' => 'test-public-key',
+        'credential_counter' => 0,
+        'created_by' => $this->admin->id,
+    ]);
+
+    $device->update([
+        'token_hash' => hash('sha256', $newToken),
+        'last_verified_at' => now(),
+        'last_used_at' => now(),
+    ]);
+
+    $request = Request::create('/', 'GET', [], ['buds_device' => $newToken]);
+
+    expect($this->deviceTrustService->isDeviceTrusted($request))->toBeTrue();
 });

@@ -24,6 +24,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class InvoiceController extends Controller
 {
@@ -55,8 +56,17 @@ class InvoiceController extends Controller
         ]);
     }
 
+    public function eligibleBonusesWithoutPending(Request $request): JsonResponse
+    {
+        return response()->json([
+            'customers' => $this->bonusProgramService->paginateEligibleCustomersWithoutPendingBonus($request),
+        ]);
+    }
+
     public function activeChanges(Request $request): JsonResponse
     {
+        $this->bonusProgramService->expireOverdueBonusesIfNeeded();
+
         $since = $request->filled('since')
             ? Carbon::parse($request->string('since')->toString())
             : now()->subSeconds(15);
@@ -213,7 +223,17 @@ class InvoiceController extends Controller
 
     public function activateCustomerBonus(ActivateInvoiceBonusRequest $request, CustomerBonus $customerBonus): RedirectResponse
     {
-        $this->bonusProgramService->activateBonus($customerBonus, $request->user());
+        try {
+            $this->bonusProgramService->activateBonus($customerBonus, $request->user());
+        } catch (HttpException $exception) {
+            if ($exception->getStatusCode() === 422) {
+                return redirect()
+                    ->back()
+                    ->with('error', $exception->getMessage());
+            }
+
+            throw $exception;
+        }
 
         return redirect()
             ->route('invoices.active')

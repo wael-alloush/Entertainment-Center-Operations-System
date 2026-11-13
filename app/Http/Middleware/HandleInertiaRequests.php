@@ -2,13 +2,25 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\BonusProgramService;
 use App\Services\InvoiceService;
+use Closure;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Symfony\Component\HttpFoundation\Response;
 
 class HandleInertiaRequests extends Middleware
 {
+    public function handle(Request $request, Closure $next): Response
+    {
+        if ($request->user() !== null) {
+            app(BonusProgramService::class)->expireOverdueBonusesIfNeeded();
+        }
+
+        return parent::handle($request, $next);
+    }
+
     /**
      * The root template that's loaded on the first page visit.
      *
@@ -56,6 +68,9 @@ class HandleInertiaRequests extends Middleware
                 : 0,
             'pendingCreditCount' => fn (): int => $request->user() !== null
                 ? app(InvoiceService::class)->pendingCreditCount()
+                : 0,
+            'eligibleBonusWithoutPendingCount' => fn (): int => $request->user()?->isAdmin()
+                ? app(BonusProgramService::class)->eligibleCustomersWithoutPendingBonusCount()
                 : 0,
         ]);
     }

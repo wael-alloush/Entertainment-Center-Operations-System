@@ -353,6 +353,55 @@ it('allows reception user to update invoice fields', function (): void {
         ->assertJsonPath('invoice.children_count', 3);
 });
 
+it('allows reception user to update active credit invoice phone and children count', function (): void {
+    $reception = User::factory()->reception()->create();
+    $invoice = Invoice::factory()->active()->create([
+        'is_credit' => true,
+        'credit_display_number' => 1,
+        'children_count' => 2,
+        'phone_number' => '0599111111',
+    ]);
+
+    $this->actingAs($reception)
+        ->patchJson(route('invoices.update', $invoice), [
+            'children_count' => 4,
+            'phone_number' => '0599222222',
+        ])
+        ->assertOk()
+        ->assertJsonPath('invoice.children_count', 4)
+        ->assertJsonPath('invoice.phone_number', '0599222222');
+});
+
+it('forbids updating invoice number on credit invoices', function (): void {
+    $reception = User::factory()->reception()->create();
+    $invoice = Invoice::factory()->active()->create([
+        'is_credit' => true,
+        'credit_display_number' => 1,
+        'invoice_number' => '500001',
+    ]);
+
+    $this->actingAs($reception)
+        ->patchJson(route('invoices.update', $invoice), [
+            'invoice_number' => '500002',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['invoice_number']);
+});
+
+it('forbids updating cancelled invoices', function (): void {
+    $reception = User::factory()->reception()->create();
+    $invoice = Invoice::factory()->create([
+        'status' => InvoiceStatus::Cancelled,
+        'children_count' => 2,
+    ]);
+
+    $this->actingAs($reception)
+        ->patchJson(route('invoices.update', $invoice), [
+            'children_count' => 3,
+        ])
+        ->assertForbidden();
+});
+
 it('reactivates a completed invoice and recalculates expected exit from entered at', function (): void {
     $this->travelTo(now()->setTime(10, 0));
 

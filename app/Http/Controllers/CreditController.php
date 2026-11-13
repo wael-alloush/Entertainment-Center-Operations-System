@@ -14,6 +14,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class CreditController extends Controller
 {
@@ -44,7 +45,17 @@ class CreditController extends Controller
 
     public function activate(ActivateCreditRequest $request, CustomerCredit $customerCredit): RedirectResponse
     {
-        $this->creditProgramService->activateCredit($customerCredit, $request->user());
+        try {
+            $this->creditProgramService->activateCredit($customerCredit, $request->user());
+        } catch (HttpException $exception) {
+            if ($exception->getStatusCode() === 422) {
+                return redirect()
+                    ->back()
+                    ->with('error', $exception->getMessage());
+            }
+
+            throw $exception;
+        }
 
         return redirect()
             ->route('invoices.active')

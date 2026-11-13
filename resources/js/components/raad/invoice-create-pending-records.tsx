@@ -106,7 +106,7 @@ export function InvoiceCreatePendingRecords({ phoneNumber, onActivated }: Invoic
 
         setActivatingBonusId(bonus.id);
         router.post(route('customer-bonuses.activate', bonus.id), {}, {
-            reset: ['invoices', 'summary', 'bonuses', 'pendingBonusCount'],
+            reset: ['invoices', 'summary', 'bonuses', 'pendingBonusCount', 'eligibleBonusWithoutPendingCount'],
             onSuccess: () => {
                 flushPrefetchedListPages();
                 onActivated?.();

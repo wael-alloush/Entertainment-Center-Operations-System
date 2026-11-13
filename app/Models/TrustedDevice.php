@@ -19,6 +19,15 @@ class TrustedDevice extends Model
         'allows_attendance',
         'registration_code_id',
         'created_by',
+        'authenticator_type',
+        'credential_id',
+        'public_key',
+        'webauthn_user_handle',
+        'aaguid',
+        'transports',
+        'credential_counter',
+        'device_identifier',
+        'last_verified_at',
     ];
 
     /**
@@ -28,8 +37,10 @@ class TrustedDevice extends Model
     {
         return [
             'last_used_at' => 'datetime',
+            'last_verified_at' => 'datetime',
             'is_active' => 'boolean',
             'allows_attendance' => 'boolean',
+            'credential_counter' => 'integer',
         ];
     }
 

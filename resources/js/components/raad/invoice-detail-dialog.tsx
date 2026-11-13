@@ -6,12 +6,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumericInput } from '@/components/ui/numeric-input';
+import { PhoneInput } from '@/components/ui/phone-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLiveRemainingMinute } from '@/hooks/use-live-remaining-minutes';
 import { formatRemainingMinutes, remainingTimeBadgeClass, remainingTimeTextClass } from '@/lib/format-time';
 import { flushPrefetchedListPages } from '@/lib/inertia-list-pages';
-import { whatsappUrl } from '@/lib/whatsapp';
+import { canUpdateInvoiceField } from '@/lib/invoice-permissions';
+import { getCsrfToken, jsonFetch } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import { InvoiceDetail, PreviousVisitInvoice, PreviousVisitsPayload, SessionDuration } from '@/types/domain';
 import { router } from '@inertiajs/react';
@@ -43,6 +46,7 @@ type EditableFieldKey = 'invoice_number' | 'phone_number' | 'children_count';
 
 interface ValidationError extends Error {
     errors?: Record<string, string[]>;
+    status?: number;
 }
 
 interface InvoiceDetailDialogProps {
@@ -55,32 +59,6 @@ interface InvoiceDetailDialogProps {
     showReactivate?: boolean;
     showDeleteCompleted?: boolean;
     sessionDurations?: SessionDuration[];
-}
-
-function getCsrfToken(): string {
-    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
-}
-
-async function jsonFetch<T>(url: string, options?: RequestInit): Promise<T> {
-    const response = await fetch(url, {
-        ...options,
-        headers: {
-            Accept: 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-            ...(options?.headers ?? {}),
-        },
-        credentials: 'same-origin',
-    });
-
-    const data = (await response.json().catch(() => ({}))) as T & { errors?: Record<string, string[]> };
-
-    if (!response.ok) {
-        const error = new Error('Request failed') as ValidationError;
-        error.errors = data.errors;
-        throw error;
-    }
-
-    return data;
 }
 
 function splitDateTime(value: string | null | undefined): { date: string; time: string } {
@@ -174,6 +152,7 @@ function EditableInvoiceField({
     onEditValueChange,
     onSave,
     icon,
+    canEdit = true,
 }: {
     label: string;
     field: EditableFieldKey;
@@ -190,6 +169,7 @@ function EditableInvoiceField({
     onCancelEdit: () => void;
     onEditValueChange: (value: string) => void;
     onSave: () => void;
+    canEdit?: boolean;
 }) {
     const isEditing = editingField === field;
 
@@ -197,14 +177,25 @@ function EditableInvoiceField({
         <InfoCard label={label} icon={icon}>
             {isEditing ? (
                 <div className="space-y-2">
-                    <Input
-                        type={inputType}
-                        value={editValue}
-                        onChange={(e) => onEditValueChange(e.target.value)}
-                        dir={inputDir}
-                        className="bg-background"
-                        autoFocus
-                    />
+                    {inputType === 'number' ? (
+                        <NumericInput
+                            maxLength={2}
+                            value={editValue}
+                            onChange={(e) => onEditValueChange(e.target.value)}
+                            dir={inputDir}
+                            className="bg-background"
+                            autoFocus
+                        />
+                    ) : (
+                        <Input
+                            type={inputType}
+                            value={editValue}
+                            onChange={(e) => onEditValueChange(e.target.value)}
+                            dir={inputDir}
+                            className="bg-background"
+                            autoFocus
+                        />
+                    )}
                     {fieldError && <p className="text-destructive text-xs">{fieldError}</p>}
                     <div className="flex gap-2">
                         <Button type="button" size="sm" disabled={saving} onClick={onSave}>
@@ -218,16 +209,18 @@ function EditableInvoiceField({
             ) : (
                 <div className="group flex items-center justify-between gap-2">
                     <div className={valueClassName}>{displayValue}</div>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        title="تعديل"
-                        className="text-muted-foreground size-8 shrink-0 opacity-70 transition-opacity group-hover:opacity-100"
-                        onClick={() => onStartEdit(field)}
-                    >
-                        <Pencil className="size-3.5" />
-                    </Button>
+                    {canEdit && (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            title="تعديل"
+                            className="text-muted-foreground size-8 shrink-0 opacity-100 md:opacity-70 md:group-hover:opacity-100"
+                            onClick={() => onStartEdit(field)}
+                        >
+                            <Pencil className="size-3.5" />
+                        </Button>
+                    )}
                 </div>
             )}
         </InfoCard>
@@ -409,7 +402,7 @@ export function InvoiceDetailDialog({
         try {
             const data = await jsonFetch<{ message: string; invoice: InvoiceDetail }>(route('invoices.bonuses.store', activeInvoiceId), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     children_count: bonusChildrenCount,
                     session_duration_id: bonusSessionDurationId,
@@ -419,7 +412,7 @@ export function InvoiceDetailDialog({
             setMessage(data.message);
             setView('detail');
             flushPrefetchedListPages();
-            router.reload({ only: ['invoices', 'summary', 'pendingBonusCount'], preserveScroll: true });
+            router.reload({ only: ['invoices', 'summary', 'pendingBonusCount', 'eligibleBonusWithoutPendingCount'], preserveScroll: true });
         } catch (err) {
             const validationError = err as ValidationError;
             const messages = Object.values(validationError.errors ?? {}).flat();
@@ -520,7 +513,7 @@ export function InvoiceDetailDialog({
     };
 
     const startEdit = (field: EditableFieldKey) => {
-        if (!invoice) {
+        if (!invoice || !canUpdateInvoiceField(invoice, field)) {
             return;
         }
 
@@ -546,7 +539,15 @@ export function InvoiceDetailDialog({
     };
 
     const saveField = async () => {
-        if (!activeInvoiceId || !editingField) {
+        const invoiceId = activeInvoiceId ?? invoice?.id ?? null;
+
+        if (!invoiceId || !editingField || !invoice) {
+            return;
+        }
+
+        if (!canUpdateInvoiceField(invoice, editingField)) {
+            setFieldError('لا يمكن تعديل هذا الحقل لهذا النوع من الفواتير.');
+
             return;
         }
 
@@ -559,9 +560,9 @@ export function InvoiceDetailDialog({
                 : { [editingField]: editValue };
 
         try {
-            const data = await jsonFetch<{ message: string; invoice: InvoiceDetail }>(route('invoices.update', activeInvoiceId), {
+            const data = await jsonFetch<{ message: string; invoice: InvoiceDetail }>(route('invoices.update', invoiceId), {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
             setInvoice(data.invoice);
@@ -573,7 +574,7 @@ export function InvoiceDetailDialog({
         } catch (err) {
             const validationError = err as ValidationError;
             const messages = validationError.errors?.[editingField];
-            setFieldError(messages?.[0] ?? 'تعذر حفظ التعديل.');
+            setFieldError(messages?.[0] ?? validationError.message ?? 'تعذر حفظ التعديل.');
         } finally {
             setFieldSaving(false);
         }
@@ -732,6 +733,7 @@ export function InvoiceDetailDialog({
                                     <EditableInvoiceField
                                         label="رقم الفاتورة"
                                         field="invoice_number"
+                                        canEdit={canUpdateInvoiceField(invoice, 'invoice_number')}
                                         displayValue={
                                             <p className="text-primary text-xl font-bold md:text-2xl" dir="ltr">
                                                 {invoice.invoice_number}
@@ -756,6 +758,7 @@ export function InvoiceDetailDialog({
                                     <EditableInvoiceField
                                         label="عدد الأطفال"
                                         field="children_count"
+                                        canEdit={canUpdateInvoiceField(invoice, 'children_count')}
                                         displayValue={
                                             <p className="text-xl font-bold text-emerald-600 md:text-2xl dark:text-emerald-400">{invoice.children_count}</p>
                                         }
@@ -784,13 +787,13 @@ export function InvoiceDetailDialog({
                                                 >
                                                     {invoice.phone_number}
                                                 </button>
-                                                {!invoice.is_expired_bonus && (
+                                                {!invoice.is_expired_bonus && canUpdateInvoiceField(invoice, 'phone_number') && (
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
                                                         size="icon"
                                                         title="تعديل"
-                                                        className="text-muted-foreground size-7 shrink-0 opacity-70 group-hover:opacity-100"
+                                                        className="text-muted-foreground size-7 shrink-0 opacity-100 md:opacity-70 md:group-hover:opacity-100"
                                                         onClick={() => startEdit('phone_number')}
                                                     >
                                                         <Pencil className="size-3.5" />
@@ -810,10 +813,9 @@ export function InvoiceDetailDialog({
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
-                                            <Input
+                                            <PhoneInput
                                                 value={editValue}
                                                 onChange={(e) => setEditValue(e.target.value)}
-                                                dir="ltr"
                                                 className="bg-background"
                                                 autoFocus
                                             />
@@ -908,11 +910,9 @@ export function InvoiceDetailDialog({
                             </p>
                             <div className="space-y-2">
                                 <Label htmlFor="bonus_children_count">عدد الأطفال</Label>
-                                <Input
+                                <NumericInput
                                     id="bonus_children_count"
-                                    type="number"
-                                    min={1}
-                                    max={20}
+                                    maxLength={2}
                                     value={bonusChildrenCount}
                                     onChange={(e) =>
                                         setBonusChildrenCount(e.target.value === '' ? '' : Number(e.target.value))

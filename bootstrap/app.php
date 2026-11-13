@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AssignDeviceCookie;
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureBonusExpiryChecked;
 use App\Http\Middleware\EnsureTrustedDevice;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -17,10 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'admin' => EnsureAdmin::class,
             'active' => EnsureUserIsActive::class,
             'trusted' => EnsureTrustedDevice::class,
+            'bonus-expiry' => EnsureBonusExpiryChecked::class,
         ]);
 
         $middleware->web(append: [

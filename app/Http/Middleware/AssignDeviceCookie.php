@@ -33,7 +33,7 @@ class AssignDeviceCookie
         }
 
         if ($needsCookie && $token !== null) {
-            $response->headers->setCookie($this->deviceTrustService->attachDeviceCookie($token));
+            $response->headers->setCookie($this->deviceTrustService->attachDeviceCookie($token, $request));
         }
 
         return $response;

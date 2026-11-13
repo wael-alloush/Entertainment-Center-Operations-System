@@ -47,14 +47,29 @@ export function NavMain({ items = [], label = 'Platform' }: { items: NavItem[]; 
                                         </span>
                                     )}
                                     <span className="font-medium group-data-[collapsible=icon]:hidden">{item.title}</span>
-                                    {item.badge !== undefined && item.badge > 0 && (
-                                        <Badge
-                                            variant="secondary"
-                                            className="ms-auto bg-amber-500/15 text-xs text-amber-700 group-data-[collapsible=icon]:hidden dark:text-amber-300"
-                                        >
-                                            {item.badge}
-                                        </Badge>
-                                    )}
+                                    {(item.badge !== undefined && item.badge > 0) ||
+                                    (item.secondaryBadge !== undefined && item.secondaryBadge > 0) ? (
+                                        <span className="ms-auto flex items-center gap-1 group-data-[collapsible=icon]:hidden">
+                                            {item.badge !== undefined && item.badge > 0 && (
+                                                <Badge
+                                                    variant="secondary"
+                                                    className="bg-amber-500/15 text-xs text-amber-700 dark:text-amber-300"
+                                                    title="مكافآت مضافة — بانتظار التفعيل"
+                                                >
+                                                    {item.badge}
+                                                </Badge>
+                                            )}
+                                            {item.secondaryBadge !== undefined && item.secondaryBadge > 0 && (
+                                                <Badge
+                                                    variant="secondary"
+                                                    className="bg-violet-500/15 text-xs text-violet-700 dark:text-violet-300"
+                                                    title="أرقام مؤهلة للمكافأة — لم تُضف بعد"
+                                                >
+                                                    {item.secondaryBadge}
+                                                </Badge>
+                                            )}
+                                        </span>
+                                    ) : null}
                                 </Link>
                             </SidebarMenuButton>
                         </SidebarMenuItem>

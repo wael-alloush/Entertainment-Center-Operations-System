@@ -20,8 +20,14 @@ Route::redirect('dashboard', '/invoices/active');
 
 Route::get('device/register', [DeviceRegistrationController::class, 'create'])->name('device.register');
 Route::post('device/register', [DeviceRegistrationController::class, 'store'])->name('device.register.store');
+Route::middleware('auth')->group(function () {
+    Route::get('device/webauthn/options', [DeviceRegistrationController::class, 'options'])->name('device.webauthn.options');
+    Route::get('device/webauthn/assertion-options', [DeviceRegistrationController::class, 'assertionOptions'])->name('device.webauthn.assertion-options');
+    Route::post('device/webauthn/register', [DeviceRegistrationController::class, 'registerWithWebAuthn'])->name('device.webauthn.register');
+    Route::post('device/webauthn/restore', [DeviceRegistrationController::class, 'restoreWithWebAuthn'])->name('device.webauthn.restore');
+});
 
-Route::middleware(['auth', 'active', 'trusted'])->group(function () {
+Route::middleware(['auth', 'active', 'trusted', 'bonus-expiry'])->group(function () {
     Route::get('invoices/active', [InvoiceController::class, 'active'])->name('invoices.active');
     Route::get('invoices/active/changes', [InvoiceController::class, 'activeChanges'])->name('invoices.active.changes');
     Route::get('invoices/completed', [InvoiceController::class, 'completed'])->name('invoices.completed');
@@ -32,6 +38,9 @@ Route::middleware(['auth', 'active', 'trusted'])->group(function () {
         ->middleware('admin')
         ->name('invoices.previous-visits');
     Route::get('invoices/bonuses', [InvoiceController::class, 'pendingBonuses'])->name('invoices.bonuses');
+    Route::get('invoices/bonuses/eligible-without-pending', [InvoiceController::class, 'eligibleBonusesWithoutPending'])
+        ->middleware('admin')
+        ->name('invoices.bonuses.eligible-without-pending');
     Route::get('invoices/credits', [CreditController::class, 'index'])->name('invoices.credits');
     Route::post('credits', [CreditController::class, 'store'])->name('credits.store');
     Route::post('customer-credits/{customerCredit}/activate', [CreditController::class, 'activate'])->name('customer-credits.activate');

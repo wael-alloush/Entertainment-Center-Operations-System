@@ -12,6 +12,8 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumericInput } from '@/components/ui/numeric-input';
+import { PhoneInput } from '@/components/ui/phone-input';
 import { Label } from '@/components/ui/label';
 import {
     RaadDesktopTable,
@@ -605,23 +607,20 @@ export function PendingCreditsTable({ credits, filters, sessionDurations }: Pend
                         <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
                                 <Label htmlFor="edit_credit_phone">رقم الجوال</Label>
-                                <Input
+                                <PhoneInput
                                     id="edit_credit_phone"
                                     value={editData.phone_number}
                                     onChange={(event) => setEditData('phone_number', event.target.value)}
                                     placeholder="05xxxxxxxx"
-                                    dir="ltr"
                                     required
                                 />
                                 {editErrors.phone_number && <p className="text-destructive text-sm">{editErrors.phone_number}</p>}
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="edit_credit_children">عدد الأطفال</Label>
-                                <Input
+                                <NumericInput
                                     id="edit_credit_children"
-                                    type="number"
-                                    min={1}
-                                    max={20}
+                                    maxLength={2}
                                     value={editData.children_count}
                                     onChange={(event) => setEditData('children_count', Number(event.target.value))}
                                     required
@@ -692,23 +691,20 @@ export function PendingCreditsTable({ credits, filters, sessionDurations }: Pend
                         <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
                                 <Label htmlFor="credit_phone">رقم الجوال</Label>
-                                <Input
+                                <PhoneInput
                                     id="credit_phone"
                                     value={data.phone_number}
                                     onChange={(event) => setData('phone_number', event.target.value)}
                                     placeholder="05xxxxxxxx"
-                                    dir="ltr"
                                     required
                                 />
                                 {errors.phone_number && <p className="text-destructive text-sm">{errors.phone_number}</p>}
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="credit_children">عدد الأطفال</Label>
-                                <Input
+                                <NumericInput
                                     id="credit_children"
-                                    type="number"
-                                    min={1}
-                                    max={20}
+                                    maxLength={2}
                                     value={data.children_count}
                                     onChange={(event) => setData('children_count', Number(event.target.value))}
                                     required

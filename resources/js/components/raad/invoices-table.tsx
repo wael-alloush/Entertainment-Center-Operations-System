@@ -14,6 +14,8 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { NumericInput } from '@/components/ui/numeric-input';
+import { PhoneInput } from '@/components/ui/phone-input';
 import { Label } from '@/components/ui/label';
 import {
     formatExitTime,
@@ -465,7 +467,6 @@ export function InvoicesTable({
                                         value={localFilters.search}
                                         onChange={(e) => updateFilters({ search: e.target.value }, { debounceSearch: true })}
                                         className="bg-background h-10 pr-9"
-                                        inputMode="numeric"
                                     />
                                 </div>
                             </div>
@@ -877,10 +878,9 @@ export function InvoicesTable({
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="children_count">عدد الأطفال</Label>
-                                    <Input
+                                    <NumericInput
                                         id="children_count"
-                                        type="number"
-                                        min={1}
+                                        maxLength={2}
                                         className="h-10"
                                         value={data.children_count}
                                         placeholder="عدد الأطفال"
@@ -898,10 +898,8 @@ export function InvoicesTable({
 
                             <div className="space-y-2">
                                 <Label htmlFor="phone_number">رقم الجوال</Label>
-                                <Input
+                                <PhoneInput
                                     id="phone_number"
-                                    dir="ltr"
-                                    inputMode="tel"
                                     placeholder="05xxxxxxxx"
                                     className="h-10"
                                     value={data.phone_number}

@@ -64,7 +64,7 @@ export function RaadPagination({ links, currentPage, lastPage, perPage, total, o
                     variant="outline"
                     size="sm"
                     disabled={previousLink?.url === null}
-                    onClick={() => visitPage(previousLink?.url ?? null, only)}
+                    onClick={() => visitPage(previousLink?.url ?? null, queryParams, only)}
                 >
                     <ChevronRight className="size-4" />
                     السابق

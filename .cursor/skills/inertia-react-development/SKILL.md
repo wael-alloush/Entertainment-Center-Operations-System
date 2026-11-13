@@ -8,6 +8,16 @@ metadata:
 
 # Inertia React Development
 
+## When to Apply
+
+Activate this skill when:
+
+- Creating or modifying React page components for Inertia
+- Working with forms in React (using `<Form>` or `useForm`)
+- Implementing client-side navigation with `<Link>` or `router`
+- Using v2 features: deferred props, prefetching, WhenVisible, InfiniteScroll, once props, flash data, or polling
+- Building React-specific features with the Inertia protocol
+
 ## Documentation
 
 Use `search-docs` for detailed Inertia v2 React patterns and documentation.
@@ -93,9 +103,116 @@ router.visit('/users', {
 
 ## Form Handling
 
+### Form Component (Recommended)
+
+The recommended way to build forms is with the `<Form>` component:
+
+<!-- Form Component Example -->
+```react
+import { Form } from '@inertiajs/react'
+
+export default function CreateUser() {
+    return (
+        <Form action="/users" method="post">
+            {({ errors, processing, wasSuccessful }) => (
+                <>
+                    <input type="text" name="name" />
+                    {errors.name && <div>{errors.name}</div>}
+
+                    <input type="email" name="email" />
+                    {errors.email && <div>{errors.email}</div>}
+
+                    <button type="submit" disabled={processing}>
+                        {processing ? 'Creating...' : 'Create User'}
+                    </button>
+
+                    {wasSuccessful && <div>User created!</div>}
+                </>
+            )}
+        </Form>
+    )
+}
+```
+
+### Form Component With All Props
+
+<!-- Form Component Full Example -->
+```react
+import { Form } from '@inertiajs/react'
+
+<Form action="/users" method="post">
+    {({
+        errors,
+        hasErrors,
+        processing,
+        progress,
+        wasSuccessful,
+        recentlySuccessful,
+        clearErrors,
+        resetAndClearErrors,
+        defaults,
+        isDirty,
+        reset,
+        submit
+    }) => (
+        <>
+            <input type="text" name="name" defaultValue={defaults.name} />
+            {errors.name && <div>{errors.name}</div>}
+
+            <button type="submit" disabled={processing}>
+                {processing ? 'Saving...' : 'Save'}
+            </button>
+
+            {progress && (
+                <progress value={progress.percentage} max="100">
+                    {progress.percentage}%
+                </progress>
+            )}
+
+            {wasSuccessful && <div>Saved!</div>}
+        </>
+    )}
+</Form>
+```
+
+### Form Component Reset Props
+
+The `<Form>` component supports automatic resetting:
+
+- `resetOnError` - Reset form data when the request fails
+- `resetOnSuccess` - Reset form data when the request succeeds
+- `setDefaultsOnSuccess` - Update default values on success
+
+Use the `search-docs` tool with a query of `form component resetting` for detailed guidance.
+
+<!-- Form with Reset Props -->
+```react
+import { Form } from '@inertiajs/react'
+
+<Form
+    action="/users"
+    method="post"
+    resetOnSuccess
+    setDefaultsOnSuccess
+>
+    {({ errors, processing, wasSuccessful }) => (
+        <>
+            <input type="text" name="name" />
+            {errors.name && <div>{errors.name}</div>}
+
+            <button type="submit" disabled={processing}>
+                Submit
+            </button>
+        </>
+    )}
+</Form>
+```
+
+Forms can also be built using the `useForm` helper for more programmatic control. Use the `search-docs` tool with a query of `useForm helper` for guidance.
+
 ### `useForm` Hook
 
-For Inertia v2.0.x: Build forms using the `useForm` helper as the `<Form>` component is not available until v2.1.0+.
+For more programmatic control or to follow existing conventions, use the `useForm` hook:
 
 <!-- useForm Hook Example -->
 ```react
@@ -228,32 +345,53 @@ export default function Dashboard({ stats }) {
 - `autoStart` (default `true`) — set to `false` to start polling manually via the returned `start()` function
 - `keepAlive` (default `false`) — set to `true` to prevent throttling when the browser tab is inactive
 
-### WhenVisible (Infinite Scroll)
+### WhenVisible
 
-Load more data when user scrolls to a specific element:
+Lazy-load a prop when an element scrolls into view. Useful for deferring expensive data that sits below the fold:
 
-<!-- Infinite Scroll with WhenVisible -->
+<!-- WhenVisible Example -->
 ```react
 import { WhenVisible } from '@inertiajs/react'
 
-export default function UsersList({ users }) {
+export default function Dashboard({ stats }) {
     return (
         <div>
-            {users.data.map(user => (
-                <div key={user.id}>{user.name}</div>
-            ))}
+            <h1>Dashboard</h1>
 
-            {users.next_page_url && (
-                <WhenVisible
-                    data="users"
-                    params={{ page: users.current_page + 1 }}
-                    fallback={<div>Loading more...</div>}
-                />
-            )}
+            <WhenVisible data="stats" buffer={200} fallback={<div className="animate-pulse">Loading stats...</div>}>
+                {({ fetching }) => (
+                    <div>
+                        <p>Total Users: {stats.total_users}</p>
+                        <p>Revenue: {stats.revenue}</p>
+                        {fetching && <span>Refreshing...</span>}
+                    </div>
+                )}
+            </WhenVisible>
         </div>
     )
 }
 ```
+
+### InfiniteScroll
+
+Automatically load additional pages of paginated data as users scroll:
+
+<!-- InfiniteScroll Example -->
+```react
+import { InfiniteScroll } from '@inertiajs/react'
+
+export default function Users({ users }) {
+    return (
+        <InfiniteScroll data="users">
+            {users.data.map(user => (
+                <div key={user.id}>{user.name}</div>
+            ))}
+        </InfiniteScroll>
+    )
+}
+```
+
+The server must use `Inertia::scroll()` to configure the paginated data. Use the `search-docs` tool with a query of `infinite scroll` for detailed guidance on buffers, manual loading, reverse mode, and custom trigger elements.
 
 ## Common Pitfalls
 

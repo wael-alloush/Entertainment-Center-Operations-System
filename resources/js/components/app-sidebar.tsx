@@ -11,7 +11,8 @@ import { SharedData } from '@/types';
 const adminNavItems: NavItem[] = [{ title: 'إدارة النظام', url: '/management', icon: Settings2 }];
 
 export function AppSidebar() {
-    const { auth, name, pendingBonusCount, pendingCreditCount } = usePage<SharedData>().props;
+    const { auth, name, pendingBonusCount, pendingCreditCount, eligibleBonusWithoutPendingCount } =
+        usePage<SharedData>().props;
     const { appearance, updateAppearance } = useAppearance();
     const isDark = appearance === 'dark';
 
@@ -23,6 +24,10 @@ export function AppSidebar() {
             url: '/invoices/bonuses',
             icon: Gift,
             badge: pendingBonusCount > 0 ? pendingBonusCount : undefined,
+            secondaryBadge:
+                auth.user?.is_admin && eligibleBonusWithoutPendingCount > 0
+                    ? eligibleBonusWithoutPendingCount
+                    : undefined,
         },
         {
             title: 'الرصيد',

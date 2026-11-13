@@ -2,13 +2,20 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Invoice;
+use App\Support\InvoiceAuthorization;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class UpdateInvoiceRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        $invoice = $this->route('invoice');
+
+        return $invoice instanceof Invoice
+            && $this->user() !== null
+            && InvoiceAuthorization::canUpdateInvoice($invoice);
     }
 
     /**
@@ -21,6 +28,27 @@ class UpdateInvoiceRequest extends FormRequest
             'phone_number' => ['sometimes', 'required', 'string', 'max:20', 'regex:/^05\d{8}$/'],
             'children_count' => ['sometimes', 'required', 'integer', 'min:1', 'max:20'],
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $invoice = $this->route('invoice');
+
+            if (! $invoice instanceof Invoice) {
+                return;
+            }
+
+            foreach (InvoiceAuthorization::EDITABLE_FIELDS as $field) {
+                if (! $this->has($field)) {
+                    continue;
+                }
+
+                if (! InvoiceAuthorization::canUpdateField($invoice, $field)) {
+                    $validator->errors()->add($field, 'لا يمكن تعديل هذا الحقل لهذا النوع من الفواتير.');
+                }
+            }
+        });
     }
 
     /**

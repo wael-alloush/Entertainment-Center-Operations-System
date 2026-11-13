@@ -48,16 +48,17 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
     return (
         <ConfirmDialogContext.Provider value={confirm}>
             {children}
-            <Dialog
-                open={state !== null}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        finish(false);
-                    }
-                }}
-            >
-                {state && (
+            {state !== null && (
+                <Dialog
+                    open
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            finish(false);
+                        }
+                    }}
+                >
                     <DialogContent className="gap-0 overflow-hidden p-0 md:max-w-md [&>button.absolute]:hidden" dir="rtl">
+                        <DialogDescription className="sr-only">{state.description}</DialogDescription>
                         <div className="flex gap-3 p-4 pb-3">
                             <div
                                 className={cn(
@@ -69,9 +70,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
                             </div>
                             <DialogHeader className="space-y-2 text-right">
                                 <DialogTitle className="text-base font-bold">{state.title}</DialogTitle>
-                                <DialogDescription className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-                                    {state.description}
-                                </DialogDescription>
+                                <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{state.description}</p>
                             </DialogHeader>
                         </div>
                         <DialogFooter className="flex-col-reverse gap-2 border-t border-border/60 bg-muted/20 px-4 py-3 sm:flex-row sm:justify-start">
@@ -88,8 +87,8 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
                             </Button>
                         </DialogFooter>
                     </DialogContent>
-                )}
-            </Dialog>
+                </Dialog>
+            )}
         </ConfirmDialogContext.Provider>
     );
 }

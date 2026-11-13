@@ -20,6 +20,7 @@ export interface NavItem {
     icon?: LucideIcon | null;
     isActive?: boolean;
     badge?: number;
+    secondaryBadge?: number;
 }
 
 export interface SharedData {
@@ -28,6 +29,7 @@ export interface SharedData {
     auth: Auth;
     pendingBonusCount: number;
     pendingCreditCount: number;
+    eligibleBonusWithoutPendingCount: number;
     [key: string]: unknown;
 }
 

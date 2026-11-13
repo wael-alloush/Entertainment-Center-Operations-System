@@ -35,7 +35,6 @@ class EnsureTrustedDevice
         }
 
         return redirect()
-            ->route('device.register')
-            ->with('error', 'هذا الجهاز غير موثّق. أدخل رمز التوثيق من المدير.');
+            ->route('device.register');
     }
 }

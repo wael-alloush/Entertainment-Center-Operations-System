@@ -18,6 +18,8 @@ beforeEach(function (): void {
     $this->admin = User::factory()->admin()->create();
     $this->reception = User::factory()->reception()->create();
     $this->sessionDurationId = SessionDuration::query()->value('id');
+
+    Setting::query()->where('key', BonusProgramService::LAST_EXPIRY_RUN_SETTING_KEY)->delete();
 });
 
 it('sets expiry date when adding a pending bonus', function (): void {
@@ -154,8 +156,10 @@ it('forbids activating an expired bonus', function (): void {
     app(BonusProgramService::class)->expireOverdueBonuses();
 
     $this->actingAs($this->reception)
+        ->from(route('invoices.bonuses'))
         ->post(route('customer-bonuses.activate', $bonus))
-        ->assertStatus(422);
+        ->assertRedirect(route('invoices.bonuses'))
+        ->assertSessionHas('error', 'انتهت صلاحية هذه المكافأة.');
 });
 
 it('keeps bonuses activatable after expires_at until the next daily check time', function (): void {
@@ -260,12 +264,30 @@ it('does not finalize overdue bonuses before the daily check time on later days'
     Carbon::setTestNow('2026-07-03 12:00:00');
 
     expect(app(BonusProgramService::class)->expireOverdueBonuses())->toBe(0)
-        ->and($bonus->fresh()->expired_at)->toBeNull();
+        ->and($bonus->fresh()->expired_at)->toBeNull()
+        ->and(app(BonusProgramService::class)->isBonusExpired($bonus))->toBeFalse();
 
     Carbon::setTestNow('2026-07-03 20:30:00');
 
     expect(app(BonusProgramService::class)->expireOverdueBonuses())->toBe(1)
-        ->and($bonus->fresh()->expired_at?->toDateTimeString())->toBe('2026-07-02 20:00:00');
+        ->and($bonus->fresh()->expired_at?->toDateTimeString())->toBe('2026-07-02 20:00:00')
+        ->and(app(BonusProgramService::class)->isBonusExpired($bonus->fresh()))->toBeTrue();
+});
+
+it('keeps overdue bonuses activatable before the daily check time on later days', function (): void {
+    Carbon::setTestNow('2026-06-01 10:00:00');
+
+    $invoice = Invoice::factory()->completed()->create();
+    $bonus = app(BonusProgramService::class)->addBonus($invoice, [
+        'children_count' => 1,
+        'session_duration_id' => $this->sessionDurationId,
+    ], $this->admin);
+
+    Carbon::setTestNow('2026-07-03 12:00:00');
+
+    $this->actingAs($this->reception)
+        ->post(route('customer-bonuses.activate', $bonus))
+        ->assertRedirect(route('invoices.active'));
 });
 
 it('does not expire bonuses before the configured daily check time', function (): void {
@@ -293,6 +315,62 @@ it('does not expire bonuses before the configured daily check time', function ()
 
     expect(app(BonusProgramService::class)->expireOverdueBonuses())->toBe(1)
         ->and($bonus->fresh()->expired_at?->toDateTimeString())->toBe('2026-07-02 20:00:00');
+});
+
+it('expires overdue bonuses when opening active invoices after the missed daily check time', function (): void {
+    Carbon::setTestNow('2026-06-01 10:00:00');
+
+    Setting::setValue('bonus_program', [
+        'visit_threshold' => 4,
+        'validity_days' => 30,
+        'expiry_check_time' => '20:00',
+        'next_display_number' => 1,
+    ]);
+    Cache::forget('settings.bonus_program');
+
+    $invoice = Invoice::factory()->completed()->create();
+    $bonus = app(BonusProgramService::class)->addBonus($invoice, [
+        'children_count' => 1,
+        'session_duration_id' => $this->sessionDurationId,
+    ], $this->admin);
+
+    $bonus->update(['expires_at' => '2026-07-02 10:00:00']);
+
+    Carbon::setTestNow('2026-07-03 21:00:00');
+
+    $this->actingAs($this->reception)
+        ->get(route('invoices.active'))
+        ->assertOk();
+
+    expect($bonus->fresh()->expired_at?->toDateTimeString())->toBe('2026-07-02 20:00:00');
+});
+
+it('catches up overdue bonuses through active invoice sync after the daily check time', function (): void {
+    Carbon::setTestNow('2026-06-01 10:00:00');
+
+    Setting::setValue('bonus_program', [
+        'visit_threshold' => 4,
+        'validity_days' => 30,
+        'expiry_check_time' => '20:00',
+        'next_display_number' => 1,
+    ]);
+    Cache::forget('settings.bonus_program');
+
+    $invoice = Invoice::factory()->completed()->create();
+    $bonus = app(BonusProgramService::class)->addBonus($invoice, [
+        'children_count' => 1,
+        'session_duration_id' => $this->sessionDurationId,
+    ], $this->admin);
+
+    $bonus->update(['expires_at' => '2026-07-02 10:00:00']);
+
+    Carbon::setTestNow('2026-07-03 21:00:00');
+
+    $this->actingAs($this->reception)
+        ->getJson(route('invoices.active.changes', ['since' => now()->subMinute()->toIso8601String()]))
+        ->assertOk();
+
+    expect($bonus->fresh()->expired_at?->toDateTimeString())->toBe('2026-07-02 20:00:00');
 });
 
 it('updates validity days for admin users', function (): void {

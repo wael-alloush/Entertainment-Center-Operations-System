@@ -16,11 +16,12 @@ interface ActiveInvoicesProps {
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'الفواتير النشطة', href: '/invoices/active' }];
 
 export default function ActiveInvoices({ invoices, sessionDurations, summary, filters, nextInvoiceNumber }: ActiveInvoicesProps) {
-    const { flash } = usePage<{ flash: { success?: string } }>().props;
+    const { flash } = usePage<{ flash: { success?: string; error?: string } }>().props;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="الفواتير النشطة" />
+            <FlashAlert message={flash?.error} variant="error" />
             <FlashAlert message={flash?.success} />
             <InvoicesTable
                 invoices={invoices}

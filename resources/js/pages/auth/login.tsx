@@ -106,15 +106,8 @@ export default function Login({ status, canResetPassword }: LoginProps) {
 
                 <div className="text-muted-foreground text-center text-sm">
                     جهاز جديد؟{' '}
-                    <TextLink href={route('device.register')} tabIndex={6}>
+                    <TextLink href={route('device.register')} tabIndex={5}>
                         توثيق الجهاز برمز
-                    </TextLink>
-                </div>
-
-                <div className="text-muted-foreground text-center text-sm">
-                    ليس لديك حساب؟{' '}
-                    <TextLink href={route('register')} tabIndex={5}>
-                        إنشاء حساب
                     </TextLink>
                 </div>
             </form>

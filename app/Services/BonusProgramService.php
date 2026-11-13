@@ -3,11 +3,16 @@
 namespace App\Services;
 
 use App\Enums\InvoiceStatus;
+use App\Models\Customer;
 use App\Models\CustomerBonus;
 use App\Models\Invoice;
 use App\Models\SessionDuration;
 use App\Models\Setting;
 use App\Models\User;
+use App\Support\PhoneSearch;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +25,8 @@ class BonusProgramService
     public function __construct(private InvoiceService $invoiceService) {}
 
     public const SETTING_KEY = 'bonus_program';
+
+    public const LAST_EXPIRY_RUN_SETTING_KEY = 'bonus_program_last_expiry_run_date';
 
     public const DEFAULT_EXPIRY_CHECK_TIME = '20:00';
 
@@ -75,6 +82,7 @@ class BonusProgramService
         ]);
 
         Cache::forget('settings.bonus_program');
+        $this->clearLastDailyExpiryRunDate();
     }
 
     public function visitThreshold(): int
@@ -142,7 +150,11 @@ class BonusProgramService
             return true;
         }
 
-        return $this->shouldFinalizeBonus($bonus, $at);
+        if (! $this->shouldFinalizeBonus($bonus, $at)) {
+            return false;
+        }
+
+        return $this->hasPassedDailyExpiryCheckTime($at);
     }
 
     public function isEligible(int $visitCount, ?int $threshold = null): bool
@@ -156,27 +168,66 @@ class BonusProgramService
         return $visitCount % ($threshold + 1) === $threshold;
     }
 
+    public function eligibleCustomersWithoutPendingBonusCount(): int
+    {
+        return $this->eligibleCustomersWithoutPendingBonusQuery()->count();
+    }
+
+    /**
+     * @return LengthAwarePaginator<int, array{id: int, phone_number: string, visit_count: int}>
+     */
+    public function paginateEligibleCustomersWithoutPendingBonus(Request $request): LengthAwarePaginator
+    {
+        $search = $request->string('search')->trim()->toString();
+
+        return $this->eligibleCustomersWithoutPendingBonusQuery()
+            ->when(
+                $search !== '',
+                fn (Builder $query): Builder => $query->whereIn('id', PhoneSearch::matchingCustomerIdsQuery($search)),
+            )
+            ->orderByDesc('visit_count')
+            ->orderBy('phone_number')
+            ->paginate(25)
+            ->withQueryString()
+            ->through(fn (Customer $customer): array => [
+                'id' => $customer->id,
+                'phone_number' => $customer->phone_number,
+                'visit_count' => (int) $customer->visit_count,
+            ]);
+    }
+
+    /**
+     * @return Builder<Customer>
+     */
+    private function eligibleCustomersWithoutPendingBonusQuery(): Builder
+    {
+        $threshold = $this->visitThreshold();
+        $cycleLength = $threshold + 1;
+
+        return Customer::query()
+            ->where('visit_count', '>=', $threshold)
+            ->whereRaw('MOD(visit_count, ?) = ?', [$cycleLength, $threshold])
+            ->whereDoesntHave('bonuses', fn (Builder $query): Builder => $query->pending());
+    }
+
     public function expireOverdueBonusesIfNeeded(): int
     {
         if (! $this->hasPassedDailyExpiryCheckTime()) {
             return 0;
         }
 
-        if (
-            Cache::has($this->dailyExpiryCheckCacheKey())
-            && ! $this->hasPendingBonusesEligibleForFinalization()
-            && ! $this->hasPendingBonusesWithFinalizationLaterToday()
-        ) {
+        $today = now()->toDateString();
+        $hasEligible = $this->hasPendingBonusesEligibleForFinalization();
+        $hasLaterToday = $this->hasPendingBonusesWithFinalizationLaterToday();
+
+        if ($this->lastDailyExpiryRunDate() === $today && ! $hasEligible && ! $hasLaterToday) {
             return 0;
         }
 
-        $expiredCount = $this->expireOverdueBonuses();
+        $expiredCount = $this->finalizeBonusesEligibleForFinalization();
 
-        if (
-            ! $this->hasPendingBonusesEligibleForFinalization()
-            && ! $this->hasPendingBonusesWithFinalizationLaterToday()
-        ) {
-            Cache::put($this->dailyExpiryCheckCacheKey(), true, now()->endOfDay());
+        if (! $this->hasPendingBonusesEligibleForFinalization() && ! $this->hasPendingBonusesWithFinalizationLaterToday()) {
+            $this->markDailyExpiryRunDate($today);
         }
 
         return $expiredCount;
@@ -188,6 +239,11 @@ class BonusProgramService
             return 0;
         }
 
+        return $this->finalizeBonusesEligibleForFinalization();
+    }
+
+    private function finalizeBonusesEligibleForFinalization(): int
+    {
         $bonuses = CustomerBonus::query()
             ->pending()
             ->whereNull('expired_at')
@@ -355,9 +411,29 @@ class BonusProgramService
             });
     }
 
-    private function dailyExpiryCheckCacheKey(): string
+    private function lastDailyExpiryRunDate(): ?string
     {
-        return 'bonuses.expiry_checked.'.now()->toDateString();
+        $value = Setting::getValue(self::LAST_EXPIRY_RUN_SETTING_KEY);
+
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $date = $value['date'] ?? null;
+
+        return is_string($date) && $date !== '' ? $date : null;
+    }
+
+    private function markDailyExpiryRunDate(string $date): void
+    {
+        Setting::setValue(self::LAST_EXPIRY_RUN_SETTING_KEY, [
+            'date' => $date,
+        ]);
+    }
+
+    private function clearLastDailyExpiryRunDate(): void
+    {
+        Setting::query()->where('key', self::LAST_EXPIRY_RUN_SETTING_KEY)->delete();
     }
 
     private function normalizeExpiryCheckTime(string $time): string

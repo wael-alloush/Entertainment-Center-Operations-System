@@ -1,4 +1,5 @@
 import { useConfirm } from '@/components/raad/confirm-dialog';
+import { EligibleBonusesDialog } from '@/components/raad/eligible-bonuses-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -20,7 +21,8 @@ import { flushPrefetchedListPages } from '@/lib/inertia-list-pages';
 import { pendingBonusWhatsappUrl } from '@/lib/whatsapp';
 import { cn } from '@/lib/utils';
 import { InvoiceFilters, PaginatedPendingBonuses, PendingBonus, SessionDuration } from '@/types/domain';
-import { router } from '@inertiajs/react';
+import { SharedData } from '@/types';
+import { router, usePage } from '@inertiajs/react';
 import { Baby, CalendarDays, Gift, LoaderCircle, MessageCircle, Phone, Search, Timer, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -44,8 +46,10 @@ function SessionDurationBadge({ session }: { session: SessionDuration }) {
 
 export function PendingBonusesTable({ bonuses, filters, validityDays }: PendingBonusesTableProps) {
     const confirm = useConfirm();
+    const { auth, eligibleBonusWithoutPendingCount } = usePage<SharedData>().props;
     const [localFilters, setLocalFilters] = useState(filters);
     const [activatingId, setActivatingId] = useState<number | null>(null);
+    const [eligibleDialogOpen, setEligibleDialogOpen] = useState(false);
     const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
@@ -108,7 +112,7 @@ export function PendingBonusesTable({ bonuses, filters, validityDays }: PendingB
         setActivatingId(bonus.id);
         router.post(route('customer-bonuses.activate', bonus.id), {}, {
             preserveScroll: true,
-            reset: ['bonuses', 'invoices', 'summary', 'pendingBonusCount'],
+            reset: ['bonuses', 'invoices', 'summary', 'pendingBonusCount', 'eligibleBonusWithoutPendingCount'],
             onSuccess: flushPrefetchedListPages,
             onFinish: () => setActivatingId(null),
         });
@@ -120,12 +124,31 @@ export function PendingBonusesTable({ bonuses, filters, validityDays }: PendingB
                 <CardHeader className="space-y-4 border-b pb-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <h1 className="text-base font-bold sm:text-lg">المكافآت غير المفعلة</h1>
-                        {localFilters.search && (
-                            <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={clearFilters}>
-                                <X className="size-4" />
-                                مسح البحث
-                            </Button>
-                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {auth.user?.is_admin && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-2 border-violet-500/30 text-violet-700 dark:text-violet-300"
+                                    onClick={() => setEligibleDialogOpen(true)}
+                                >
+                                    <Gift className="size-4" />
+                                    أرقام مؤهلة بدون مكافأة
+                                    {eligibleBonusWithoutPendingCount > 0 && (
+                                        <Badge className="bg-violet-500/15 text-violet-700 dark:text-violet-300">
+                                            {eligibleBonusWithoutPendingCount}
+                                        </Badge>
+                                    )}
+                                </Button>
+                            )}
+                            {localFilters.search && (
+                                <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={clearFilters}>
+                                    <X className="size-4" />
+                                    مسح البحث
+                                </Button>
+                            )}
+                        </div>
                     </div>
                     <div className="mx-auto max-w-md">
                         <div className="relative">
@@ -310,6 +333,10 @@ export function PendingBonusesTable({ bonuses, filters, validityDays }: PendingB
                     only={['bonuses']}
                 />
             </Card>
+
+            {auth.user?.is_admin && eligibleDialogOpen && (
+                <EligibleBonusesDialog open onOpenChange={setEligibleDialogOpen} />
+            )}
         </div>
     );
 }
